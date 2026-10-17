@@ -1,0 +1,10 @@
+{
+  "name": "live-shiori",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node scripts/test.mjs",
+    "build": "node scripts/build.mjs",
+    "deploy:api": "npx wrangler@4 deploy"
+  }
+}

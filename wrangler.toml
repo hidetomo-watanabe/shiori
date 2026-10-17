@@ -1,0 +1,21 @@
+# API専用 Worker（Cloudflare Workers）
+name = "live-shiori-api"
+main = "dist/worker/index.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[build]
+command = "node scripts/build.mjs"
+
+# イベントの保存先（R2）。bucket_name は Cloudflare で作成したバケット名に合わせる
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "live-shiori"
+
+# 期限切れイベントの定期削除：毎日 3:00（日本時間）= 18:00 UTC
+[triggers]
+crons = ["0 18 * * *"]
+
+# API を呼べる画面のドメイン（カンマ区切りで複数可）
+[vars]
+ALLOWED_ORIGINS = "https://shiori.whathides.co.jp"
