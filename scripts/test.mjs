@@ -8,7 +8,7 @@ const env={BUCKET:{
  async delete(k){for(const key of [].concat(k))records.delete(key)},
  async list({prefix}){return {objects:[...records].filter(([k])=>k.startsWith(prefix)).map(([key,r])=>({key,customMetadata:r.customMetadata})),truncated:false}}
 }};
-const data={title:'日本語ライブ',date:'2026-10-24',open:'13:30',start:'14:00',venue:'HAND-CLAP',note:'こんにちは',acts:[{name:'だぁめんず',play:25,change:10}]};
+const data={title:'日本語ライブ',date:'2026-10-24',open:'13:30',start:'14:00',end:'16:00',venue:'HAND-CLAP',note:'こんにちは',acts:[{name:'だぁめんず',play:25,change:10}]};
 const call=(path,method='GET',body,token,ip)=>api(new Request('https://example.com/api/events'+path,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{}),...(ip?{'CF-Connecting-IP':ip}:{})},...(body!==undefined?{body:typeof body==='string'?body:JSON.stringify(body)}:{})}),env);
 
 // 既存の動作
@@ -84,5 +84,5 @@ const env2={...env,ALLOWED_ORIGINS:'http://localhost:8080, https://shiori.whathi
 const broken={BUCKET:{async get(){throw Error('down')},async put(){throw Error('down')}}};r=await api(new Request('https://x.dev/api/events/'+cid,{headers:{Origin:P}}),broken);assert.equal(r.status,500);assert.equal(r.headers.get('Access-Control-Allow-Origin'),P,'500でもCORSヘッダ');
 
 // OPEN時間：未指定の旧データは受け付けて空文字で保存、25時台は受け付け、不正な値は400
-{const {open,...legacy}=data;const r1=await call('','POST',{data:legacy},undefined,'203.0.113.77');assert.equal(r1.status,201);const r2=await call('/'+(await r1.json()).id);assert.equal((await r2.json()).data.open,'');assert.equal((await call('','POST',{data:{...data,open:'30:00'}},undefined,'203.0.113.78')).status,400);assert.equal((await call('','POST',{data:{...data,open:'25:00',start:'25:30'}},undefined,'203.0.113.79')).status,201);}
-console.log('PASS: 既存9項目 + OPEN時間, 不正入力400, 作成回数制限429, IP非保存, 期限切れ404/削除, 定期削除, 保存期間(a)・プラン別, 削除, IPハッシュ秘密値, CORS');
+{const {open,end,...legacy}=data;const r1=await call('','POST',{data:legacy},undefined,'203.0.113.77');assert.equal(r1.status,201);const r2=await call('/'+(await r1.json()).id);const legacyData=(await r2.json()).data;assert.equal(legacyData.open,'');assert.equal(legacyData.end,'');assert.equal((await call('','POST',{data:{...data,open:'30:00'}},undefined,'203.0.113.78')).status,400);assert.equal((await call('','POST',{data:{...data,open:'25:00',start:'25:30',end:'28:00'}},undefined,'203.0.113.79')).status,201);assert.equal((await call('','POST',{data:{...data,end:'1600'}},undefined,'203.0.113.80')).status,400);}
+console.log('PASS: 既存9項目 + OPEN/END時間, 不正入力400, 作成回数制限429, IP非保存, 期限切れ404/削除, 定期削除, 保存期間(a)・プラン別, 削除, IPハッシュ秘密値, CORS');

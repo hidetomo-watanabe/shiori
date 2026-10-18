@@ -14,7 +14,7 @@ export function computeExpiry(data,plan,now){
  return new Date(Math.max(t,now+r.minDays*DAY)).toISOString();
 }
 const isObj=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
-export function valid(d){return isObj(d)&&typeof d.title==='string'&&d.title.length<=100&&typeof d.date==='string'&&/^(|\d{4}-\d{2}-\d{2})$/.test(d.date)&&typeof d.start==='string'&&/^([01]\d|2\d):[0-5]\d$/.test(d.start)&&(d.open===undefined||typeof d.open==='string'&&/^(|([01]\d|2\d):[0-5]\d)$/.test(d.open))&&typeof d.venue==='string'&&d.venue.length<=100&&typeof d.note==='string'&&d.note.length<=1500&&Array.isArray(d.acts)&&d.acts.length>0&&d.acts.length<=40&&d.acts.every(a=>isObj(a)&&typeof a.name==='string'&&a.name.length<=100&&Number.isInteger(a.play)&&a.play>=1&&a.play<=240&&Number.isInteger(a.change)&&a.change>=0&&a.change<=120)}
+export function valid(d){return isObj(d)&&typeof d.title==='string'&&d.title.length<=100&&typeof d.date==='string'&&/^(|\d{4}-\d{2}-\d{2})$/.test(d.date)&&typeof d.start==='string'&&/^([01]\d|2\d):[0-5]\d$/.test(d.start)&&(d.open===undefined||typeof d.open==='string'&&/^(|([01]\d|2\d):[0-5]\d)$/.test(d.open))&&(d.end===undefined||typeof d.end==='string'&&/^(|([01]\d|2\d):[0-5]\d)$/.test(d.end))&&typeof d.venue==='string'&&d.venue.length<=100&&typeof d.note==='string'&&d.note.length<=1500&&Array.isArray(d.acts)&&d.acts.length>0&&d.acts.length<=40&&d.acts.every(a=>isObj(a)&&typeof a.name==='string'&&a.name.length<=100&&Number.isInteger(a.play)&&a.play>=1&&a.play<=240&&Number.isInteger(a.change)&&a.change>=0&&a.change<=120)}
 const expired=record=>!!record.expiresAt&&Date.parse(record.expiresAt)<Date.now();
 // IPハッシュ用の秘密値：環境変数 RATE_LIMIT_SALT、未設定なら初回に生成してR2に保管（公開されない）
 let saltCache;
@@ -66,7 +66,7 @@ async function route(req,env){
   if(Number(req.headers.get('Content-Length'))>30000)return json({error:'入力内容が長すぎます'},413);
   let body;try{let raw=await req.text();if(raw.length>30000)return json({error:'入力内容が長すぎます'},413);body=JSON.parse(raw)}catch{return json({error:'入力内容を読み込めません'},400)}
   if(!isObj(body)||!valid(body.data))return json({error:'入力内容を確認してください'},400);
-  const data={title:body.data.title,date:body.data.date,open:body.data.open||'',start:body.data.start,venue:body.data.venue,note:body.data.note,acts:body.data.acts.map(a=>({name:a.name,play:a.play,change:a.change}))};
+  const data={title:body.data.title,date:body.data.date,open:body.data.open||'',end:body.data.end||'',start:body.data.start,venue:body.data.venue,note:body.data.note,acts:body.data.acts.map(a=>({name:a.name,play:a.play,change:a.change}))};
   const now=Date.now(),meta=r=>({customMetadata:{expiresAt:r.expiresAt||''}});
   if(!id){
    if(await rateLimited(req,env))return json({error:'短時間に作成できる上限に達しました。1時間ほどおいて再度お試しください。'},429,{'Retry-After':'3600'});
