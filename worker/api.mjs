@@ -78,12 +78,15 @@ async function route(req,env){
  }
  return json({error:'ページが見つかりません'},404);
 }
-// セトリ（段階1：作成・編集・メンバー閲覧）。保存先は setlists/{id}。公開スナップショット（publication）は段階2で追加するため、公開APIは常に未公開扱い
+// セトリ。保存先は setlists/{id}。内部データ（data）と公開スナップショット（publication）を同じオブジェクトに持ち、etag条件付き書き込みで原子的に更新する
 // メンバー閲覧キーは編集キーから導出する（編集リンクを持つ人はどの端末でもメンバー用リンクを表示できる。サーバーにはハッシュのみ保持）
 const SETLIST_GONE='セトリが見つかりません。リンクが正しくないか、削除・保存期間の終了により見られなくなっています。',SETLIST_KINDS=['song','mc','break'];
 const str=(v,max)=>typeof v==='string'&&v.length<=max;
-export function validSetlist(d){return isObj(d)&&str(d.title,100)&&str(d.artist,100)&&typeof d.date==='string'&&/^(|\d{4}-\d{2}-\d{2})$/.test(d.date)&&str(d.venue,100)&&str(d.comment,1500)&&str(d.memo,1500)&&Array.isArray(d.items)&&d.items.length>0&&d.items.length<=100&&d.items.every(i=>isObj(i)&&SETLIST_KINDS.includes(i.kind)&&str(i.title,200)&&(i.kind!=='song'||i.title.trim()!=='')&&(i.artist===undefined||i.kind==='song'&&str(i.artist,200))&&(i.sec===null||Number.isInteger(i.sec)&&i.sec>=1&&i.sec<=14400)&&str(i.memo,500))}
-const cleanSetlist=d=>({title:d.title,artist:d.artist,date:d.date,venue:d.venue,comment:d.comment,memo:d.memo,items:d.items.map(i=>({kind:i.kind,title:i.title,...(i.kind==='song'?{artist:i.artist||''}:{}),sec:i.sec,memo:i.memo}))});
+export function validSetlist(d){return isObj(d)&&str(d.title,100)&&str(d.artist,100)&&typeof d.date==='string'&&/^(|\d{4}-\d{2}-\d{2})$/.test(d.date)&&str(d.venue,100)&&str(d.comment,1500)&&str(d.memo,1500)&&Array.isArray(d.items)&&d.items.length>0&&d.items.length<=100&&d.items.every(i=>isObj(i)&&SETLIST_KINDS.includes(i.kind)&&str(i.title,200)&&(i.kind!=='song'||i.title.trim()!=='')&&(i.artist===undefined||i.kind==='song'&&str(i.artist,200))&&(i.sec===null||Number.isInteger(i.sec)&&i.sec>=1&&i.sec<=14400)&&str(i.memo,500))&&(d.videos===undefined||Array.isArray(d.videos)&&d.videos.length<=5&&d.videos.every(u=>str(u,2048)&&/^https:\/\/[^\s/?#]+\S*$/.test(u)))}
+const cleanSetlist=d=>({title:d.title,artist:d.artist,date:d.date,venue:d.venue,comment:d.comment,memo:d.memo,videos:d.videos||[],items:d.items.map(i=>({kind:i.kind,title:i.title,...(i.kind==='song'?{artist:i.artist||''}:{}),sec:i.sec,memo:i.memo}))});
+// 公開用データは許可リストで作る（内部メモ・MC・休憩・演奏時間は含めない）
+export const toPublic=d=>({title:d.title,artist:d.artist,date:d.date,venue:d.venue,comment:d.comment,videos:d.videos||[],songs:d.items.filter(i=>i.kind==='song').map(i=>({title:i.title,artist:i.artist||''}))});
+const publicationStatus=r=>r.publication?{published:true,publishedAt:r.publication.publishedAt,publishedRevision:r.publication.revision,firstPublishedAt:r.firstPublishedAt}:{published:false};
 export const memberToken=async(editToken,gen)=>(await digest(editToken+':member:'+gen)).slice(0,48);
 const SETLIST_MAX=150000;
 async function readJson(req,max){
@@ -103,7 +106,7 @@ async function setlistAuth(req,env,id,roles){
 }
 const setlistMeta=r=>({customMetadata:{expiresAt:r.expiresAt||''}});
 async function setlistRoute(req,env,url){
- const match=url.pathname.match(/^\/api\/setlists(?:\/([a-f0-9]{24})(\/public|\/keys)?)?$/);if(!match)return json({error:'ページが見つかりません'},404);
+ const match=url.pathname.match(/^\/api\/setlists(?:\/([a-f0-9]{24})(\/public|\/keys|\/publish)?)?$/);if(!match)return json({error:'ページが見つかりません'},404);
  const [,id,sub]=match,now=Date.now();
  if(req.method==='GET'&&id&&sub==='/public'){const obj=await env.BUCKET.get('setlists/'+id),record=obj&&await obj.json();if(!record||expired(record)||!record.publication)return json({error:SETLIST_GONE},404);return json({data:record.publication.data,publishedAt:record.publication.publishedAt})}
  if(req.method==='POST'&&!id){
@@ -115,8 +118,8 @@ async function setlistRoute(req,env,url){
   await env.BUCKET.put('setlists/'+setlistId,JSON.stringify(record),setlistMeta(record));
   return json({id:setlistId,editToken,memberToken:member,memberGen:1,revision:1,updatedAt:record.updatedAt,expiresAt:record.expiresAt},201);
  }
- if(!id||(sub&&!(sub==='/keys'&&req.method==='POST')))return json({error:'ページが見つかりません'},404);
- if(req.method==='GET'){const {error,record,role}=await setlistAuth(req,env,id,['edit','member']);if(error)return error;return json({data:record.data,role,revision:record.revision,updatedAt:record.updatedAt,expiresAt:record.expiresAt??null,...(role==='edit'?{memberGen:record.memberGen}:{})})}
+ if(!id||(sub&&!((sub==='/keys'||sub==='/publish')&&req.method==='POST')))return json({error:'ページが見つかりません'},404);
+ if(req.method==='GET'){const {error,record,role}=await setlistAuth(req,env,id,['edit','member']);if(error)return error;return json({data:record.data,role,revision:record.revision,updatedAt:record.updatedAt,expiresAt:record.expiresAt??null,publication:publicationStatus(record),...(role==='edit'?{memberGen:record.memberGen}:{})})}
  const {error,obj,record,token}=await setlistAuth(req,env,id,['edit']);if(error)return error;
  if(req.method==='DELETE'){await env.BUCKET.delete('setlists/'+id);return json({deleted:true})}
  const {error:bodyError,body}=await readJson(req,SETLIST_MAX);if(bodyError)return bodyError;if(!isObj(body))return json({error:'入力内容を確認してください'},400);
@@ -127,6 +130,16 @@ async function setlistRoute(req,env,url){
   const editToken=body.kind==='edit'?random():token,memberGen=body.kind==='member'?record.memberGen+1:record.memberGen,member=await memberToken(editToken,memberGen);
   const conflict=await put({...record,editHash:await digest(editToken),memberHash:await digest(member),memberGen});if(conflict)return conflict;
   return json({memberGen,memberToken:member,...(body.kind==='edit'?{editToken}:{})});
+ }
+ // 公開・公開更新：保存済みの最新revisionを確認し、その内容から公開スナップショットを作る。公開停止：スナップショットを消す（内部データは残す）
+ if(sub==='/publish'){
+  if(body.action==='unpublish'){if(record.publication){const conflict=await put({...record,publication:null});if(conflict)return conflict}return json({published:false})}
+  if(body.action!=='publish')return json({error:'入力内容を確認してください'},400);
+  if(body.revision!==record.revision)return json({error:'別の画面で更新されています。ページを再読み込みし、内容を確認してから公開してください。'},409);
+  if(!record.data.items.some(i=>i.kind==='song'))return json({error:'公開するには曲を1曲以上登録してください。'},400);
+  const at=new Date(now).toISOString(),version=(record.publishedVersion||0)+1,next={...record,publication:{data:toPublic(record.data),revision:record.revision,version,publishedAt:at},publishedVersion:version,firstPublishedAt:record.firstPublishedAt||at};
+  const conflict=await put(next);if(conflict)return conflict;
+  return json(publicationStatus(next));
  }
  if(req.method!=='PUT')return json({error:'ページが見つかりません'},404);
  if(!validSetlist(body.data))return json({error:'入力内容を確認してください'},400);
