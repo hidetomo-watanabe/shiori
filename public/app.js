@@ -1,6 +1,6 @@
 (async()=>{
 const $=id=>document.getElementById(id),KEY='live-shiori-v1';
-const sample={title:'土曜日の、小さな音楽会',date:'',start:'14:00',venue:'HAND-CLAP',note:'開場 13:30 ／ どうぞお気軽にお越しください。',acts:[{name:'だぁめんず',play:25,change:10},{name:'おゆいさん',play:25,change:10},{name:'だぁめんず × おゆいさん',play:30,change:0}]};
+const sample={title:'土曜日の、小さな音楽会',date:'',start:'14:00',venue:'HAND-CLAP',note:'開場 13:30 ／ どうぞお気軽にお越しください。',acts:[{name:'だぁめんず',play:25,change:10},{name:'馬橋ハッピーアワー',play:25,change:10},{name:'だぁめんず × 馬橋ハッピーアワー',play:30,change:0}]};
 const isObj=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 function validate(d){return isObj(d)&&typeof d.title==='string'&&d.title.length<=100&&typeof d.date==='string'&&/^(|\d{4}-\d{2}-\d{2})$/.test(d.date)&&typeof d.start==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(d.start)&&typeof d.venue==='string'&&d.venue.length<=100&&typeof d.note==='string'&&d.note.length<=1500&&Array.isArray(d.acts)&&d.acts.length>0&&d.acts.length<=40&&d.acts.every(a=>isObj(a)&&typeof a.name==='string'&&a.name.length<=100&&Number.isInteger(a.play)&&a.play>=1&&a.play<=240&&Number.isInteger(a.change)&&a.change>=0&&a.change<=120)}
 const API=(document.querySelector('meta[name="api-base"]')?.content||'').replace(/\/$/,'');
