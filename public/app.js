@@ -44,6 +44,6 @@ if(!navigator.share){$('send').hidden=true;$('copy').style.gridColumn='1/3'}
 $('send').onclick=async()=>{try{await navigator.share({text:(state.title||'ライブのタイムテーブル')+'\n'+$('share-url').value})}catch(e){if(e.name!=='AbortError')$('status').textContent='共有できませんでした。「リンクをコピー」から送ってください。'}};
 $('copy').onclick=async()=>{try{await navigator.clipboard.writeText($('share-url').value);$('status').textContent='リンクをコピーしました。'}catch{$('share-url').select();$('status').textContent='リンクを選択しました。コピーしてください。'}};
 $('delete').onclick=async()=>{if(!confirm('「'+(state.title||'タイトル未入力')+'」を削除します。\n閲覧リンク・編集リンクとも使えなくなり、元に戻せません。削除しますか？'))return;const button=$('delete');button.disabled=true;try{await apiCall('/api/events/'+eventId,{method:'DELETE',headers:{Authorization:'Bearer '+editToken}});try{localStorage.removeItem(tokenKey(eventId));localStorage.removeItem(draftKey())}catch{}history.replaceState(null,'',location.pathname);const main=document.querySelector('main'),msg=document.createElement('p'),a=document.createElement('a');msg.className='deleted';msg.textContent='イベントを削除しました。閲覧リンク・編集リンクは使えなくなりました。';a.href=location.pathname;a.textContent='新しいタイムテーブルをつくる →';msg.append(document.createElement('br'),a);main.replaceChildren(msg);}catch(e){$('status').textContent=e.message;button.disabled=false;}};
-$('new-event').onclick=()=>{location.href=location.pathname};render();ready();
+$('new-event').onclick=()=>window.open(location.pathname,'_blank','noopener');render();ready();
 
 })();
