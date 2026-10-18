@@ -89,4 +89,6 @@ const broken={BUCKET:{async get(){throw Error('down')},async put(){throw Error('
 {const r1=await call('','POST',{data:{...data,acts:[...data.acts,{name:'休憩',play:15,change:5,kind:'break'}]}},undefined,'203.0.113.81');assert.equal(r1.status,201);const a=(await (await call('/'+(await r1.json()).id)).json()).data.acts;assert.equal(a[0].kind,undefined);assert.deepEqual(a[1],{name:'休憩',play:15,change:0,kind:'break'});assert.equal((await call('','POST',{data:{...data,acts:[{name:'x',play:10,change:0,kind:'session'}]}},undefined,'203.0.113.82')).status,400);}
 // 演奏0分・転換0分は保存できる
 assert.equal((await call('','POST',{data:{...data,acts:[{name:'x',play:0,change:0}]}},undefined,'203.0.113.83')).status,201);
-console.log('PASS: 既存9項目 + OPEN/END時間, 休憩, 不正入力400, 作成回数制限429, IP非保存, 期限切れ404/削除, 定期削除, 保存期間(a)・プラン別, 削除, IPハッシュ秘密値, CORS');
+// 参考URL：http(s) のみ保存、javascript: などは400
+{const r1=await call('','POST',{data:{...data,acts:[{name:'x',play:10,change:0,url:'https://example.com/a'}]}},undefined,'203.0.113.84');assert.equal(r1.status,201);assert.equal((await (await call('/'+(await r1.json()).id)).json()).data.acts[0].url,'https://example.com/a');assert.equal((await call('','POST',{data:{...data,acts:[{name:'x',play:10,change:0,url:'javascript:alert(1)'}]}},undefined,'203.0.113.85')).status,400);}
+console.log('PASS: 既存9項目 + OPEN/END時間, 休憩, 参考URL, 不正入力400, 作成回数制限429, IP非保存, 期限切れ404/削除, 定期削除, 保存期間(a)・プラン別, 削除, IPハッシュ秘密値, CORS');
