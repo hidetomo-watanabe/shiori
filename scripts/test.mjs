@@ -85,4 +85,6 @@ const broken={BUCKET:{async get(){throw Error('down')},async put(){throw Error('
 
 // OPEN時間：未指定の旧データは受け付けて空文字で保存、25時台は受け付け、不正な値は400
 {const {open,end,...legacy}=data;const r1=await call('','POST',{data:legacy},undefined,'203.0.113.77');assert.equal(r1.status,201);const r2=await call('/'+(await r1.json()).id);const legacyData=(await r2.json()).data;assert.equal(legacyData.open,'');assert.equal(legacyData.end,'');assert.equal((await call('','POST',{data:{...data,open:'30:00'}},undefined,'203.0.113.78')).status,400);assert.equal((await call('','POST',{data:{...data,open:'25:00',start:'25:30',end:'28:00'}},undefined,'203.0.113.79')).status,201);assert.equal((await call('','POST',{data:{...data,end:'1600'}},undefined,'203.0.113.80')).status,400);}
-console.log('PASS: 既存9項目 + OPEN/END時間, 不正入力400, 作成回数制限429, IP非保存, 期限切れ404/削除, 定期削除, 保存期間(a)・プラン別, 削除, IPハッシュ秘密値, CORS');
+// 休憩：kind を保存、休憩の転換は0に、不正な kind は400
+{const r1=await call('','POST',{data:{...data,acts:[...data.acts,{name:'休憩',play:15,change:5,kind:'break'}]}},undefined,'203.0.113.81');assert.equal(r1.status,201);const a=(await (await call('/'+(await r1.json()).id)).json()).data.acts;assert.equal(a[0].kind,undefined);assert.deepEqual(a[1],{name:'休憩',play:15,change:0,kind:'break'});assert.equal((await call('','POST',{data:{...data,acts:[{name:'x',play:10,change:0,kind:'session'}]}},undefined,'203.0.113.82')).status,400);}
+console.log('PASS: 既存9項目 + OPEN/END時間, 休憩, 不正入力400, 作成回数制限429, IP非保存, 期限切れ404/削除, 定期削除, 保存期間(a)・プラン別, 削除, IPハッシュ秘密値, CORS');
