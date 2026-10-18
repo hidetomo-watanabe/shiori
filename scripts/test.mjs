@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {api,cleanup,computeExpiry,CREATE_LIMIT_PER_HOUR} from '../worker/api.mjs';
+import {api,cleanup,computeExpiry,memberToken,CREATE_LIMIT_PER_HOUR} from '../worker/api.mjs';
 import {createHash} from 'node:crypto';
 const records=new Map();let etag=0;
 const env={BUCKET:{
@@ -40,7 +40,7 @@ assert.equal((await call(path)).status,404);assert.equal(records.has('events'+pa
 r=await call('','POST',{data});const victim=(await r.json()).id,vk='events/'+victim,v=records.get(vk);records.set(vk,{...v,customMetadata:{expiresAt:new Date(Date.now()-1).toISOString()}});
 records.set('ratelimit/1/old',{value:'5',etag:'x'});
 const before=[...records.keys()].filter(k=>k.startsWith('events/')).length;
-const result=await cleanup(env);assert.deepEqual(result,{events:1,ratelimit:1});
+const result=await cleanup(env);assert.deepEqual(result,{events:1,setlists:0,ratelimit:1});
 assert.equal(records.has(vk),false);assert.equal([...records.keys()].filter(k=>k.startsWith('events/')).length,before-1);assert.ok([...records.keys()].some(k=>k.startsWith('ratelimit/')),'現在のカウンタは残す');
 
 // 保存期間（a）＋プラン別
@@ -93,4 +93,53 @@ assert.equal((await call('','POST',{data:{...data,acts:[{name:'x',play:0,change:
 {const r1=await call('','POST',{data:{...data,acts:[{name:'x',play:10,change:0,url:'https://example.com/a'}]}},undefined,'203.0.113.84');assert.equal(r1.status,201);assert.equal((await (await call('/'+(await r1.json()).id)).json()).data.acts[0].url,'https://example.com/a');assert.equal((await call('','POST',{data:{...data,acts:[{name:'x',play:10,change:0,url:'javascript:alert(1)'}]}},undefined,'203.0.113.85')).status,400);}
 // チャージ：整数のみ保存（ドリンク0も保存）、不正値は400
 {const r1=await call('','POST',{data:{...data,charge:2500,drinks:1}},undefined,'203.0.113.86');assert.equal(r1.status,201);const d1=(await (await call('/'+(await r1.json()).id)).json()).data;assert.equal(d1.charge,2500);assert.equal(d1.drinks,1);{const r0=await call('','POST',{data:{...data,charge:2500,drinks:0}},undefined,'203.0.113.89');assert.equal((await (await call('/'+(await r0.json()).id)).json()).data.drinks,0);}assert.equal((await call('','POST',{data:{...data,charge:'2500'}},undefined,'203.0.113.87')).status,400);assert.equal((await call('','POST',{data:{...data,drinks:10}},undefined,'203.0.113.88')).status,400);}
-console.log('PASS: 既存9項目 + OPEN/END時間, 休憩, 参考URL, チャージ, 不正入力400, 作成回数制限429, IP非保存, 期限切れ404/削除, 定期削除, 保存期間(a)・プラン別, 削除, IPハッシュ秘密値, CORS');
+
+// セトリ（段階1）
+{const sl=(path,method='GET',body,token,ip)=>api(new Request('https://example.com/api/setlists'+path,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{}),...(ip?{'CF-Connecting-IP':ip}:{})},...(body!==undefined?{body:typeof body==='string'?body:JSON.stringify(body)}:{})}),env);
+const sd={title:'10/24 HAND-CLAP',artist:'だぁめんず',date:'2026-10-24',venue:'HAND-CLAP',comment:'ありがとうございました',memo:'集合 12:00',items:[{kind:'song',title:'夜明け',artist:'原曲さん',sec:210,memo:'カポ2'},{kind:'mc',title:'MC',sec:null,memo:'メンバー紹介'},{kind:'break',title:'休憩',sec:300,memo:''},{kind:'song',title:'二曲目',artist:'',sec:null,memo:''}]};
+// 作成：キーを返し、ハッシュのみ保存
+let r=await sl('','POST',{data:sd},undefined,'203.0.113.120');assert.equal(r.status,201);const c=await r.json();assert.match(c.id,/^[a-f0-9]{24}$/);assert.match(c.editToken,/^[a-f0-9]{48}$/);assert.equal(c.memberToken,await memberToken(c.editToken,1),'メンバーキーは編集キーから導出');
+const key='setlists/'+c.id,stored=records.get(key).value;assert.ok(!stored.includes(c.editToken)&&!stored.includes(c.memberToken),'キーを平文で保存しない');assert.ok(records.get(key).customMetadata.expiresAt,'定期削除用の期限');
+// 未認証では内部データを取得できず、存在しないIDと区別できない
+const missing=await(await sl('/'+'0'.repeat(24))).json();
+for(const res of [await sl('/'+c.id),await sl('/'+c.id,'GET',undefined,'f'.repeat(48)),await sl('/'+c.id+'/public')]){assert.equal(res.status,404);assert.deepEqual(await res.json(),missing)}
+assert.equal((await sl('/'+'0'.repeat(24)+'/public')).status,404);
+// メンバー閲覧：内部の最新内容を読めるが、編集用の情報は返さない
+r=await sl('/'+c.id,'GET',undefined,c.memberToken);assert.equal(r.status,200);let m=await r.json();assert.deepEqual(m.data,sd);assert.equal(m.role,'member');assert.equal(m.memberGen,undefined);assert.equal(m.editToken,undefined);assert.equal(m.editHash,undefined);
+r=await sl('/'+c.id,'GET',undefined,c.editToken);m=await r.json();assert.equal(m.role,'edit');assert.equal(m.memberGen,1);assert.equal(m.editHash,undefined);
+// メンバー権限では変更・削除・再発行できない
+assert.equal((await sl('/'+c.id,'PUT',{data:sd,revision:1},c.memberToken)).status,403);
+assert.equal((await sl('/'+c.id,'DELETE',undefined,c.memberToken)).status,403);
+assert.equal((await sl('/'+c.id+'/keys','POST',{kind:'member'},c.memberToken)).status,403);
+assert.equal((await sl('/'+c.id,'PUT',{data:sd,revision:1})).status,404);
+// 編集・競合
+const sd2={...sd,title:'更新後'};r=await sl('/'+c.id,'PUT',{data:sd2,revision:1},c.editToken);assert.equal(r.status,200);assert.equal((await r.json()).revision,2);
+assert.equal((await(await sl('/'+c.id,'GET',undefined,c.memberToken)).json()).data.title,'更新後','メンバーは最新の保存内容を見る');
+assert.equal((await sl('/'+c.id,'PUT',{data:sd,revision:1},c.editToken)).status,409);
+const both=await Promise.all([sl('/'+c.id,'PUT',{data:sd,revision:2},c.editToken),sl('/'+c.id,'PUT',{data:sd2,revision:2},c.editToken)]);assert.deepEqual(both.map(x=>x.status).sort(),[200,409]);
+// 入力チェック
+const bads=[{...sd,items:[]},{...sd,items:Array(101).fill(sd.items[0])},{...sd,items:[{...sd.items[0],title:'  '}]},{...sd,items:[{...sd.items[0],sec:0}]},{...sd,items:[{...sd.items[0],sec:14401}]},{...sd,items:[{...sd.items[0],sec:1.5}]},{...sd,items:[{...sd.items[0],kind:'encore'}]},{...sd,items:[{...sd.items[1],artist:'x'}]},{...sd,title:'x'.repeat(101)},{...sd,memo:'x'.repeat(1501)},{...sd,items:[{...sd.items[0],memo:'x'.repeat(501)}]},{...sd,date:'10/24'}];
+for(const bad of bads)assert.equal((await sl('','POST',{data:bad},undefined,'203.0.113.121')).status,400,JSON.stringify(bad).slice(0,80));
+for(const bad of ['null','[]',{data:null}])assert.equal((await sl('','POST',bad,undefined,'203.0.113.121')).status,400);
+r=await sl('','POST',{data:{...sd,items:[{kind:'mc',title:'',sec:null,memo:''}]}},undefined,'203.0.113.122');assert.equal(r.status,201,'作成途中（MCのみ）も保存できる');
+r=await sl('','POST',{data:{...sd,items:Array(100).fill(sd.items[0]),extra:'x'}},undefined,'203.0.113.123');assert.equal(r.status,201,'100件まで');const big=await r.json();assert.equal(JSON.parse(records.get('setlists/'+big.id).value).data.extra,undefined,'未知の項目は保存しない');
+// メンバー用リンクの再発行：旧キーは使えない
+r=await sl('/'+c.id+'/keys','POST',{kind:'member'},c.editToken);assert.equal(r.status,200);const k2=await r.json();assert.equal(k2.memberGen,2);assert.equal(k2.memberToken,await memberToken(c.editToken,2));
+assert.equal((await sl('/'+c.id,'GET',undefined,c.memberToken)).status,404);assert.equal((await sl('/'+c.id,'GET',undefined,k2.memberToken)).status,200);
+// 編集リンクの再発行：旧編集キー・旧メンバーキーとも使えない
+r=await sl('/'+c.id+'/keys','POST',{kind:'edit'},c.editToken);assert.equal(r.status,200);const k3=await r.json();assert.match(k3.editToken,/^[a-f0-9]{48}$/);assert.equal(k3.memberToken,await memberToken(k3.editToken,2));
+assert.equal((await sl('/'+c.id,'GET',undefined,c.editToken)).status,404);assert.equal((await sl('/'+c.id,'GET',undefined,k2.memberToken)).status,404);assert.equal((await sl('/'+c.id,'GET',undefined,k3.memberToken)).status,200);
+assert.equal((await sl('/'+c.id+'/keys','POST',{kind:'admin'},k3.editToken)).status,400);
+// 期限切れ・定期削除
+const exp=JSON.parse(records.get('setlists/'+big.id).value);exp.expiresAt=new Date(Date.now()-1000).toISOString();records.set('setlists/'+big.id,{...records.get('setlists/'+big.id),value:JSON.stringify(exp),customMetadata:{expiresAt:exp.expiresAt}});
+assert.equal((await cleanup(env)).setlists,1);assert.equal(records.has('setlists/'+big.id),false);
+// 削除：全リンクが無効
+assert.equal((await sl('/'+c.id,'DELETE',undefined,c.editToken)).status,404);
+r=await sl('/'+c.id,'DELETE',undefined,k3.editToken);assert.equal(r.status,200);assert.equal(records.has(key),false);
+for(const t of [k3.editToken,k3.memberToken])assert.equal((await sl('/'+c.id,'GET',undefined,t)).status,404);
+// 作成回数はイベントと共通の上限
+for(let i=0;i<CREATE_LIMIT_PER_HOUR;i++)await sl('','POST',{data:sd},undefined,'203.0.113.124');assert.equal((await sl('','POST',{data:sd},undefined,'203.0.113.124')).status,429);
+// CORS：許可外オリジンからの作成は拒否
+assert.equal((await api(new Request('https://x.dev/api/setlists',{method:'POST',headers:{Origin:'https://evil.example','Content-Type':'application/json'},body:JSON.stringify({data:sd})}),env)).status,403);
+}
+console.log('PASS: 既存9項目 + OPEN/END時間, 休憩, 参考URL, チャージ, 不正入力400, 作成回数制限429, IP非保存, 期限切れ404/削除, 定期削除, 保存期間(a)・プラン別, 削除, IPハッシュ秘密値, CORS, セトリ（作成・メンバー閲覧・権限・競合・入力チェック・キー再発行・期限切れ・削除）');

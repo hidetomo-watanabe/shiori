@@ -1,4 +1,5 @@
 (async()=>{
+if(new URLSearchParams(location.search).has('setlist'))return; // セトリ画面は setlist.js が担当
 const $=id=>document.getElementById(id),KEY='live-shiori-v1',ready=()=>document.documentElement.classList.remove('loading');
 const sample={title:'土曜日の、小さな音楽会',date:'',open:'12:30',start:'13:00',end:'17:00',venue:'HAND-CLAP',charge:3000,drinks:2,note:'どうぞお気軽にお越しください。',acts:[{name:'だぁめんず',play:25,change:10},{name:'馬橋ハッピーアワー',play:25,change:10},{name:'だぁめんず × 馬橋ハッピーアワー',play:30,change:0}]};
 const oldSamples=[JSON.stringify({title:'土曜日の、小さな音楽会',date:'',open:'13:30',start:'14:00',venue:'HAND-CLAP',note:'どうぞお気軽にお越しください。',acts:[{name:'だぁめんず',play:25,change:10},{name:'馬橋ハッピーアワー',play:25,change:10},{name:'だぁめんず × 馬橋ハッピーアワー',play:30,change:0}]}),JSON.stringify({title:'土曜日の、小さな音楽会',date:'',start:'14:00',venue:'HAND-CLAP',note:'開場 13:30 ／ どうぞお気軽にお越しください。',acts:[{name:'だぁめんず',play:25,change:10},{name:'おゆいさん',play:25,change:10},{name:'だぁめんず × おゆいさん',play:30,change:0}]})];

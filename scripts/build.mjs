@@ -1,5 +1,5 @@
 // ビルド出力
-//   dist/pages/   … GitHub Pages に置く画面（index.html・app.js・style.css・CNAME）
+//   dist/pages/   … GitHub Pages に置く画面（index.html・app.js・setlist.js・style.css・CNAME）
 //   dist/worker/  … Cloudflare Workers に置くAPI専用 Worker
 //   dist/server/  … 画面とAPIを1本で配信する Worker（ローカル確認・Cloudflareのみで公開する場合用）
 // 環境変数
@@ -13,7 +13,7 @@ const api=fs.readFileSync('worker/api.mjs','utf8').replace(/^export (const|funct
 const read=name=>fs.readFileSync('public/'+name,'utf8');
 const hash=s=>crypto.createHash('sha256').update(s).digest('hex').slice(0,10);
 const html=base=>{let h=read('index.html').replace('<meta name="api-base" content="">','<meta name="api-base" content="'+base.replace(/"/g,'&quot;')+'">');
- for(const f of ['app.js','style.css'])h=h.replace(new RegExp('(src|href)="'+f.replace('.','\\.')+'"'),'$1="'+f+'?v='+hash(read(f))+'"');return h};
+ for(const f of ['app.js','setlist.js','style.css'])h=h.replace(new RegExp('(src|href)="'+f.replace('.','\\.')+'"'),'$1="'+f+'?v='+hash(read(f))+'"');return h};
 const scheduled='async scheduled(event,env,ctx){ctx.waitUntil(cleanup(env))}';
 const err='catch{return new Response(JSON.stringify({error:"保存処理に失敗しました。時間をおいて再度お試しください。"}),{status:500,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}})}';
 
@@ -21,14 +21,14 @@ fs.rmSync('dist',{recursive:true,force:true});
 // 1. GitHub Pages
 fs.mkdirSync('dist/pages',{recursive:true});
 fs.writeFileSync('dist/pages/index.html',html(API_BASE));
-for(const f of ['app.js','style.css'])fs.copyFileSync('public/'+f,'dist/pages/'+f);
+for(const f of ['app.js','setlist.js','style.css'])fs.copyFileSync('public/'+f,'dist/pages/'+f);
 fs.writeFileSync('dist/pages/.nojekyll','');
 if(PAGES_DOMAIN)fs.writeFileSync('dist/pages/CNAME',PAGES_DOMAIN+'\n');
 // 2. API専用 Worker
 const apiWorker=api+'\nexport default {async fetch(req,env){try{if(new URL(req.url).pathname.startsWith("/api/"))return await api(req,env);return new Response("Not found",{status:404,headers:{"X-Robots-Tag":"noindex"}})}'+err+'},'+scheduled+'};';
 fs.mkdirSync('dist/worker',{recursive:true});fs.writeFileSync('dist/worker/index.js',apiWorker);
 // 3. 画面＋API の一体型 Worker
-const files={'/index.html':html(''),'/app.js':read('app.js'),'/style.css':read('style.css')};
+const files={'/index.html':html(''),'/app.js':read('app.js'),'/setlist.js':read('setlist.js'),'/style.css':read('style.css')};
 const server=api+'\nconst files='+JSON.stringify(files)+';\nexport default {async fetch(req,env){try{const p=new URL(req.url).pathname;if(p.startsWith("/api/"))return await api(req,env);const path=p==="/"?"/index.html":p;if(!files[path])return new Response("Not found",{status:404});return new Response(files[path],{headers:{"Content-Type":path.endsWith(".js")?"text/javascript; charset=utf-8":path.endsWith(".css")?"text/css; charset=utf-8":"text/html; charset=utf-8","Cache-Control":"no-cache","Referrer-Policy":"no-referrer","X-Content-Type-Options":"nosniff","X-Robots-Tag":"noindex"}})}'+err+'},'+scheduled+'};';
 fs.mkdirSync('dist/server',{recursive:true});fs.writeFileSync('dist/server/index.js',server);
 // OpenAI のホスティングで公開する場合用の設定（.gitignore 済み。存在する場合のみコピー）

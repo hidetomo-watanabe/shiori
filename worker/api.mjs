@@ -54,10 +54,11 @@ export async function api(req,env){
  return res;
 }
 async function route(req,env){
- const url=new URL(req.url),match=url.pathname.match(/^\/api\/events(?:\/([a-f0-9]{24}))?$/);if(!match)return json({error:'ページが見つかりません'},404);
+ const url=new URL(req.url),isSetlist=/^\/api\/setlists(\/|$)/.test(url.pathname),match=url.pathname.match(/^\/api\/events(?:\/([a-f0-9]{24}))?$/);if(!match&&!isSetlist)return json({error:'ページが見つかりません'},404);
  if(!env.BUCKET)return json({error:'保存先の準備ができていません。時間をおいて再度お試しください。'},503);
  if(!['GET','POST','PUT','DELETE'].includes(req.method))return json({error:'対応していない操作です'},405);
  if(req.method!=='GET'&&!originAllowed(req,env))return json({error:'許可されていない操作です'},403);
+ if(isSetlist)return setlistRoute(req,env,url);
  const id=match[1];
  if(req.method==='GET'&&id){const obj=await env.BUCKET.get('events/'+id);if(!obj)return json({error:GONE},404);const record=await obj.json();if(expired(record)){await env.BUCKET.delete('events/'+id);return json({error:GONE},404)}return json({data:record.data,revision:record.revision,updatedAt:record.updatedAt,expiresAt:record.expiresAt??null,plan:record.plan==='paid'?'paid':'free'});}
  if(req.method==='DELETE'&&id){const {error}=await authorize(req,env,id);if(error)return error;await env.BUCKET.delete('events/'+id);return json({deleted:true});}
@@ -77,12 +78,69 @@ async function route(req,env){
  }
  return json({error:'ページが見つかりません'},404);
 }
-// 定期実行（Cron Trigger）用：期限切れイベントと古いレート制限カウンタを削除
-export async function cleanup(env){
- if(!env.BUCKET)return {events:0,ratelimit:0};
- const now=Date.now(),hour=Math.floor(now/36e5);let events=0,ratelimit=0;
- for(const [prefix,isDead] of [['events/',o=>o.customMetadata?.expiresAt&&Date.parse(o.customMetadata.expiresAt)<now],['ratelimit/',o=>Number(o.key.split('/')[1])<hour-1]]){
-  let cursor;do{const page=await env.BUCKET.list({prefix,cursor,include:['customMetadata']});const dead=page.objects.filter(isDead).map(o=>o.key);if(dead.length){await env.BUCKET.delete(dead);prefix==='events/'?events+=dead.length:ratelimit+=dead.length}cursor=page.truncated?page.cursor:undefined}while(cursor);
+// セトリ（段階1：作成・編集・メンバー閲覧）。保存先は setlists/{id}。公開スナップショット（publication）は段階2で追加するため、公開APIは常に未公開扱い
+// メンバー閲覧キーは編集キーから導出する（編集リンクを持つ人はどの端末でもメンバー用リンクを表示できる。サーバーにはハッシュのみ保持）
+const SETLIST_GONE='セトリが見つかりません。リンクが正しくないか、削除・保存期間の終了により見られなくなっています。',SETLIST_KINDS=['song','mc','break'];
+const str=(v,max)=>typeof v==='string'&&v.length<=max;
+export function validSetlist(d){return isObj(d)&&str(d.title,100)&&str(d.artist,100)&&typeof d.date==='string'&&/^(|\d{4}-\d{2}-\d{2})$/.test(d.date)&&str(d.venue,100)&&str(d.comment,1500)&&str(d.memo,1500)&&Array.isArray(d.items)&&d.items.length>0&&d.items.length<=100&&d.items.every(i=>isObj(i)&&SETLIST_KINDS.includes(i.kind)&&str(i.title,200)&&(i.kind!=='song'||i.title.trim()!=='')&&(i.artist===undefined||i.kind==='song'&&str(i.artist,200))&&(i.sec===null||Number.isInteger(i.sec)&&i.sec>=1&&i.sec<=14400)&&str(i.memo,500))}
+const cleanSetlist=d=>({title:d.title,artist:d.artist,date:d.date,venue:d.venue,comment:d.comment,memo:d.memo,items:d.items.map(i=>({kind:i.kind,title:i.title,...(i.kind==='song'?{artist:i.artist||''}:{}),sec:i.sec,memo:i.memo}))});
+export const memberToken=async(editToken,gen)=>(await digest(editToken+':member:'+gen)).slice(0,48);
+const SETLIST_MAX=150000;
+async function readJson(req,max){
+ if(!req.headers.get('Content-Type')?.includes('application/json'))return {error:json({error:'JSON形式で送信してください'},415)};
+ if(Number(req.headers.get('Content-Length'))>max*3)return {error:json({error:'入力内容が長すぎます'},413)};
+ try{const raw=await req.text();if(raw.length>max)return {error:json({error:'入力内容が長すぎます'},413)};return {body:JSON.parse(raw)}}catch{return {error:json({error:'入力内容を読み込めません'},400)}}
+}
+// 対象が存在しない・期限切れ・キー不一致はすべて同じ404（未公開セトリの存在を推測させない）
+async function setlistAuth(req,env,id,roles){
+ const gone={error:json({error:SETLIST_GONE},404)},token=req.headers.get('Authorization')?.replace(/^Bearer /,'');
+ const obj=await env.BUCKET.get('setlists/'+id);if(!obj)return gone;const record=await obj.json();
+ if(expired(record)){await env.BUCKET.delete('setlists/'+id);return gone}
+ if(!token||!/^[a-f0-9]{48}$/.test(token))return gone;
+ const hash=await digest(token),role=hash===record.editHash?'edit':hash===record.memberHash?'member':null;if(!role)return gone;
+ if(!roles.includes(role))return {error:json({error:'編集リンクが必要です'},403)};
+ return {obj,record,role,token};
+}
+const setlistMeta=r=>({customMetadata:{expiresAt:r.expiresAt||''}});
+async function setlistRoute(req,env,url){
+ const match=url.pathname.match(/^\/api\/setlists(?:\/([a-f0-9]{24})(\/public|\/keys)?)?$/);if(!match)return json({error:'ページが見つかりません'},404);
+ const [,id,sub]=match,now=Date.now();
+ if(req.method==='GET'&&id&&sub==='/public'){const obj=await env.BUCKET.get('setlists/'+id),record=obj&&await obj.json();if(!record||expired(record)||!record.publication)return json({error:SETLIST_GONE},404);return json({data:record.publication.data,publishedAt:record.publication.publishedAt})}
+ if(req.method==='POST'&&!id){
+  const {error,body}=await readJson(req,SETLIST_MAX);if(error)return error;
+  if(!isObj(body)||!validSetlist(body.data))return json({error:'入力内容を確認してください'},400);
+  if(await rateLimited(req,env))return json({error:'短時間に作成できる上限に達しました。1時間ほどおいて再度お試しください。'},429,{'Retry-After':'3600'});
+  const data=cleanSetlist(body.data),setlistId=random().slice(0,24),editToken=random(),plan='free',member=await memberToken(editToken,1);
+  const record={data,plan,editHash:await digest(editToken),memberHash:await digest(member),memberGen:1,publication:null,revision:1,updatedAt:new Date(now).toISOString(),expiresAt:computeExpiry(data,plan,now)};
+  await env.BUCKET.put('setlists/'+setlistId,JSON.stringify(record),setlistMeta(record));
+  return json({id:setlistId,editToken,memberToken:member,memberGen:1,revision:1,updatedAt:record.updatedAt,expiresAt:record.expiresAt},201);
  }
- return {events,ratelimit};
+ if(!id||(sub&&!(sub==='/keys'&&req.method==='POST')))return json({error:'ページが見つかりません'},404);
+ if(req.method==='GET'){const {error,record,role}=await setlistAuth(req,env,id,['edit','member']);if(error)return error;return json({data:record.data,role,revision:record.revision,updatedAt:record.updatedAt,expiresAt:record.expiresAt??null,...(role==='edit'?{memberGen:record.memberGen}:{})})}
+ const {error,obj,record,token}=await setlistAuth(req,env,id,['edit']);if(error)return error;
+ if(req.method==='DELETE'){await env.BUCKET.delete('setlists/'+id);return json({deleted:true})}
+ const {error:bodyError,body}=await readJson(req,SETLIST_MAX);if(bodyError)return bodyError;if(!isObj(body))return json({error:'入力内容を確認してください'},400);
+ const put=async next=>await env.BUCKET.put('setlists/'+id,JSON.stringify(next),{...setlistMeta(next),onlyIf:{etagMatches:obj.etag}})?null:json({error:'同時に更新されました。ページを再読み込みしてください。'},409);
+ // キーの再発行：メンバー用は世代を進めて旧リンクを無効化。編集用は新しいキーに置き換え（導出元が変わるためメンバー用リンクも変わる）
+ if(sub==='/keys'){
+  if(body.kind!=='member'&&body.kind!=='edit')return json({error:'入力内容を確認してください'},400);
+  const editToken=body.kind==='edit'?random():token,memberGen=body.kind==='member'?record.memberGen+1:record.memberGen,member=await memberToken(editToken,memberGen);
+  const conflict=await put({...record,editHash:await digest(editToken),memberHash:await digest(member),memberGen});if(conflict)return conflict;
+  return json({memberGen,memberToken:member,...(body.kind==='edit'?{editToken}:{})});
+ }
+ if(req.method!=='PUT')return json({error:'ページが見つかりません'},404);
+ if(!validSetlist(body.data))return json({error:'入力内容を確認してください'},400);
+ if(body.revision!==record.revision)return json({error:'別の画面で更新されています。この下書きを控えてからページを再読み込みしてください。'},409);
+ const data=cleanSetlist(body.data),next={...record,data,revision:record.revision+1,updatedAt:new Date(now).toISOString(),expiresAt:computeExpiry(data,record.plan||'free',now)};
+ const conflict=await put(next);if(conflict)return conflict;
+ return json({id,revision:next.revision,updatedAt:next.updatedAt,expiresAt:next.expiresAt});
+}
+// 定期実行（Cron Trigger）用：期限切れのイベント・セトリと古いレート制限カウンタを削除
+export async function cleanup(env){
+ const counts={events:0,setlists:0,ratelimit:0};if(!env.BUCKET)return counts;
+ const now=Date.now(),hour=Math.floor(now/36e5),isExpired=o=>o.customMetadata?.expiresAt&&Date.parse(o.customMetadata.expiresAt)<now;
+ for(const [prefix,isDead] of [['events/',isExpired],['setlists/',isExpired],['ratelimit/',o=>Number(o.key.split('/')[1])<hour-1]]){
+  let cursor;do{const page=await env.BUCKET.list({prefix,cursor,include:['customMetadata']});const dead=page.objects.filter(isDead).map(o=>o.key);if(dead.length){await env.BUCKET.delete(dead);counts[prefix.slice(0,-1)]+=dead.length}cursor=page.truncated?page.cursor:undefined}while(cursor);
+ }
+ return counts;
 }
