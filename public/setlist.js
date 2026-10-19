@@ -132,9 +132,9 @@ const copy=(input,done)=>async()=>{try{await navigator.clipboard.writeText($(inp
 $('copy-member').onclick=copy('member-url','メンバー用リンクをコピーしました。');
 $('copy-edit').onclick=copy('edit-url','編集リンクをコピーしました。なくさないように保管してください。');
 $('copy-public').onclick=copy('public-url','公開セトリのリンクをコピーしました。');
-// 押したボタンから離れた案内欄だと気づきにくいため、コピー・共有の結果は画面下の通知（トースト）にも出す
+// 押したボタンから離れた案内欄だと気づきにくいため、コピー・共有の結果は画面下の通知（トースト）で出す
 const toast=msg=>{let t=document.getElementById('toast');if(!t){t=document.createElement('div');t.id='toast';t.setAttribute('aria-live','polite');document.body.append(t)}t.textContent=msg;t.classList.add('show');clearTimeout(t.timer);t.timer=setTimeout(()=>t.classList.remove('show'),4000)};
-const notify=msg=>{status(msg);toast(msg)};
+const notify=toast; // コピー・共有の結果は通知だけに出し、保存ボタンの下の保存状態の案内は上書きしない
 // LINEで送る：LINE公式の共有URL（アプリが開き、送る相手を選べる）。端末の共有メニューは、使える端末でだけ「ほかのアプリで送る」として出す
 // PCでは共有URLがLINEアプリを開けずLINEのトップページに飛ぶため、送る内容をコピーして貼り付けてもらう（iPadはMacとして名乗るのでタッチ対応で判定）
 const isMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||navigator.maxTouchPoints>1&&/Macintosh/.test(navigator.userAgent);

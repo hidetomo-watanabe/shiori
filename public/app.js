@@ -56,9 +56,9 @@ $('share').onclick=async()=>{if(!validate(state)){$('status').textContent='入�
 if(eventId&&!view){links();$('share').textContent='変更を保存・公開';$('status').textContent='保存済みイベントを編集中です。変更後は保存してください。';
 if(draft&&JSON.stringify(draft.data)!==JSON.stringify(state)){if(draft.revision===revision){state=draft.data;dirty=true;fillForm();$('status').textContent='前回の未保存の変更を復元しました。「変更を保存・公開」を押すと反映されます。'}else showConflict('このブラウザに未保存の下書きがありますが、その後に別の画面で更新されています。どちらで編集を続けますか？',draft.data,{data:state,revision},false)}}
 $('copy-edit').onclick=async()=>{try{await navigator.clipboard.writeText($('edit-url').value);notify('編集リンクをコピーしました。自分用に保管してください。')}catch{$('edit-url').select();notify('編集リンクを選択しました。コピーしてください。')}};
-// 押したボタンから離れた案内欄だと気づきにくいため、コピー・共有の結果は画面下の通知（トースト）にも出す
+// 押したボタンから離れた案内欄だと気づきにくいため、コピー・共有の結果は画面下の通知（トースト）で出す
 const toast=msg=>{let t=document.getElementById('toast');if(!t){t=document.createElement('div');t.id='toast';t.setAttribute('aria-live','polite');document.body.append(t)}t.textContent=msg;t.classList.add('show');clearTimeout(t.timer);t.timer=setTimeout(()=>t.classList.remove('show'),4000)};
-const notify=msg=>{$('status').textContent=msg;toast(msg)};
+const notify=toast; // コピー・共有の結果は通知だけに出し、保存ボタンの下の保存状態の案内は上書きしない
 // LINEで送る：LINE公式の共有URL（アプリが開き、送る相手を選べる）。端末の共有メニューは、使える端末でだけ「ほかのアプリで送る」として出す
 // PCでは共有URLがLINEアプリを開けずLINEのトップページに飛ぶため、送る内容をコピーして貼り付けてもらう（iPadはMacとして名乗るのでタッチ対応で判定）
 const isMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||navigator.maxTouchPoints>1&&/Macintosh/.test(navigator.userAgent);
