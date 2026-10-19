@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {api,cleanup,computeExpiry,memberToken,toPublic,connectToken,CREATE_LIMIT_PER_HOUR} from '../worker/api.mjs';
+import {api,cleanup,computeExpiry,memberToken,toPublic,connectToken,METRICS,CREATE_LIMIT_PER_HOUR} from '../worker/api.mjs';
 import {createHash} from 'node:crypto';
 const records=new Map();let etag=0;
 const env={BUCKET:{
@@ -41,7 +41,7 @@ assert.equal((await call(path)).status,404);assert.equal(records.has('events'+pa
 r=await call('','POST',{data});const victim=(await r.json()).id,vk='events/'+victim,v=records.get(vk);records.set(vk,{...v,customMetadata:{expiresAt:new Date(Date.now()-1).toISOString()}});
 records.set('ratelimit/1/old',{value:'5',etag:'x'});
 const before=[...records.keys()].filter(k=>k.startsWith('events/')).length;
-const result=await cleanup(env);assert.deepEqual(result,{events:1,setlists:0,ratelimit:1});
+const result=await cleanup(env);assert.deepEqual(result,{events:1,setlists:0,ratelimit:1,stats:0});
 assert.equal(records.has(vk),false);assert.equal([...records.keys()].filter(k=>k.startsWith('events/')).length,before-1);assert.ok([...records.keys()].some(k=>k.startsWith('ratelimit/')),'現在のカウンタは残す');
 
 // 保存期間（a）＋プラン別
@@ -251,6 +251,26 @@ for(const type of ['events','setlists']){const r=await adm('?type='+type,'a'.rep
  assert.ok(body.items.every(i=>/^[a-f0-9]{6}$/.test(i.id)),'IDは先頭6文字のみ');}
 const st=(await(await adm('?type=setlists','a'.repeat(64),aenv)).json()).items.find(i=>i.id===s1.id.slice(0,6));assert.equal(st.songs,2);assert.equal(st.published,false);
 assert.equal((await api(new Request('https://example.com/api/admin/list?type=events',{method:'POST',headers:{Authorization:'Bearer '+'a'.repeat(64)}}),aenv)).status,405);}
+// 利用計測：操作ごとの日別回数。管理キーで取得。IP・キー・入力内容を記録しない
+{const aenv={...env,ADMIN_TOKEN:'a'.repeat(64)},stats=async()=>(await(await api(new Request('https://example.com/api/admin/stats',{headers:{Authorization:'Bearer '+'a'.repeat(64)}}),aenv)).json());
+assert.equal((await api(new Request('https://example.com/api/admin/stats',{headers:{Authorization:'Bearer x'}}),aenv)).status,403);
+assert.equal((await api(new Request('https://example.com/api/admin/stats'),env)).status,403,'ADMIN_TOKEN 未設定なら拒否');
+const before=await stats();assert.deepEqual(before.metrics,METRICS);assert.equal(before.days.length,90);const t0=before.days[0];
+const r=await sl('','POST',{data:sd},undefined,'203.0.113.150'),c=await r.json();
+await sl('/'+c.id,'GET',undefined,c.memberToken);await sl('/'+c.id,'GET',undefined,c.editToken);await sl('/'+c.id+'/public');
+await sl('/'+c.id+'/publish','POST',{action:'publish',revision:1},c.editToken);await sl('/'+c.id+'/public');await sl('/'+c.id+'/public');
+await sl('/'+c.id+'/publish','POST',{action:'publish',revision:1},c.editToken);await sl('/'+c.id+'/publish','POST',{action:'unpublish'},c.editToken);await sl('/'+c.id+'/publish','POST',{action:'publish',revision:1},c.editToken);
+const e=await(await call('','POST',{data},undefined,'203.0.113.151')).json();await call('/'+e.id);await call('/'+e.id,'GET',undefined,e.editToken);
+const t1=(await stats()).days[0],d=k=>t1[k]-t0[k];
+assert.deepEqual({setlist_create:d('setlist_create'),member_view:d('member_view'),public_view:d('public_view'),publish_first:d('publish_first'),publish_update:d('publish_update'),unpublish:d('unpublish'),republish:d('republish'),event_create:d('event_create'),event_view:d('event_view')},
+ {setlist_create:1,member_view:1,public_view:2,publish_first:1,publish_update:1,unpublish:1,republish:1,event_create:1,event_view:1},'成功した操作だけを種類別に数える（未公開の公開取得・編集者の読み込みは数えない）');
+const statKeys=[...records.keys()].filter(k=>k.startsWith('stats/'));assert.ok(statKeys.every(k=>/^stats\/\d{4}-\d{2}$/.test(k)));const stxt=statKeys.map(k=>records.get(k).value).join();
+for(const x of [c.id,c.editToken,'夜明け','203.0.113.150'])assert.ok(!stxt.includes(x),'計測に含めない: '+x);
+// 計測の保存に失敗しても本来の処理は成功する
+const flaky={...env,BUCKET:{...env.BUCKET,async get(k){if(k.startsWith('stats/'))throw Error('down');return env.BUCKET.get(k)},async put(k,v,o){if(k.startsWith('stats/'))throw Error('down');return env.BUCKET.put(k,v,o)}}};
+assert.equal((await api(new Request('https://example.com/api/setlists/'+c.id+'/public'),flaky)).status,200);
+// 約90日を過ぎた月は定期削除
+records.set('stats/2020-01',{value:'{}',etag:'x'});const cl=await cleanup(env);assert.equal(cl.stats,1);assert.ok(!records.has('stats/2020-01'));assert.ok(statKeys.every(k=>records.has(k)),'今月分は残す');}
 // 期限切れ・定期削除
 const exp=JSON.parse(records.get('setlists/'+big.id).value);exp.expiresAt=new Date(Date.now()-1000).toISOString();records.set('setlists/'+big.id,{...records.get('setlists/'+big.id),value:JSON.stringify(exp),customMetadata:{expiresAt:exp.expiresAt}});
 assert.equal((await cleanup(env)).setlists,1);assert.equal(records.has('setlists/'+big.id),false);
@@ -263,4 +283,4 @@ for(let i=0;i<CREATE_LIMIT_PER_HOUR;i++)await sl('','POST',{data:sd},undefined,'
 // CORS：許可外オリジンからの作成は拒否
 assert.equal((await api(new Request('https://x.dev/api/setlists',{method:'POST',headers:{Origin:'https://evil.example','Content-Type':'application/json'},body:JSON.stringify({data:sd})}),env)).status,403);
 }
-console.log('PASS: 既存9項目 + OPEN/END時間, 休憩, 参考URL, チャージ, 不正入力400, 作成回数制限429, IP非保存, 期限切れ404/削除, 定期削除, 保存期間(a)・プラン別, 削除, IPハッシュ秘密値, CORS, セトリ（作成・メンバー閲覧・権限・競合・入力チェック・キー再発行・期限切れ・削除・公開・公開更新・公開停止・動画リンク）, 紐づけ（両権限・二重紐づけ拒否・並べ替え・解除・削除・公開時のみ導線・戻りリンク）, 運営管理の一覧（管理キー・内容非表示）');
+console.log('PASS: 既存9項目 + OPEN/END時間, 休憩, 参考URL, チャージ, 不正入力400, 作成回数制限429, IP非保存, 期限切れ404/削除, 定期削除, 保存期間(a)・プラン別, 削除, IPハッシュ秘密値, CORS, セトリ（作成・メンバー閲覧・権限・競合・入力チェック・キー再発行・期限切れ・削除・公開・公開更新・公開停止・動画リンク）, 紐づけ（両権限・二重紐づけ拒否・並べ替え・解除・削除・公開時のみ導線・戻りリンク）, 運営管理の一覧（管理キー・内容非表示）, 利用計測（種類別・失敗しても本処理を止めない・90日で削除）');

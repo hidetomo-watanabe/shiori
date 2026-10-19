@@ -26,11 +26,11 @@ fs.copyFileSync('public/ogp.png','dist/pages/ogp.png');
 fs.writeFileSync('dist/pages/.nojekyll','');
 if(PAGES_DOMAIN)fs.writeFileSync('dist/pages/CNAME',PAGES_DOMAIN+'\n');
 // 2. API専用 Worker
-const apiWorker=api+'\nexport default {async fetch(req,env){try{if(new URL(req.url).pathname.startsWith("/api/"))return await api(req,env);return new Response("Not found",{status:404,headers:{"X-Robots-Tag":"noindex"}})}'+err+'},'+scheduled+'};';
+const apiWorker=api+'\nexport default {async fetch(req,env,ctx){try{if(new URL(req.url).pathname.startsWith("/api/"))return await api(req,env,ctx);return new Response("Not found",{status:404,headers:{"X-Robots-Tag":"noindex"}})}'+err+'},'+scheduled+'};';
 fs.mkdirSync('dist/worker',{recursive:true});fs.writeFileSync('dist/worker/index.js',apiWorker);
 // 3. 画面＋API の一体型 Worker
 const files={'/index.html':html(''),'/app.js':read('app.js'),'/setlist.js':read('setlist.js'),'/style.css':read('style.css')};
-const server=api+'\nconst files='+JSON.stringify(files)+';\nexport default {async fetch(req,env){try{const p=new URL(req.url).pathname;if(p.startsWith("/api/"))return await api(req,env);const path=p==="/"?"/index.html":p;if(!files[path])return new Response("Not found",{status:404});return new Response(files[path],{headers:{"Content-Type":path.endsWith(".js")?"text/javascript; charset=utf-8":path.endsWith(".css")?"text/css; charset=utf-8":"text/html; charset=utf-8","Cache-Control":"no-cache","Referrer-Policy":"no-referrer","X-Content-Type-Options":"nosniff","X-Robots-Tag":"noindex"}})}'+err+'},'+scheduled+'};';
+const server=api+'\nconst files='+JSON.stringify(files)+';\nexport default {async fetch(req,env,ctx){try{const p=new URL(req.url).pathname;if(p.startsWith("/api/"))return await api(req,env,ctx);const path=p==="/"?"/index.html":p;if(!files[path])return new Response("Not found",{status:404});return new Response(files[path],{headers:{"Content-Type":path.endsWith(".js")?"text/javascript; charset=utf-8":path.endsWith(".css")?"text/css; charset=utf-8":"text/html; charset=utf-8","Cache-Control":"no-cache","Referrer-Policy":"no-referrer","X-Content-Type-Options":"nosniff","X-Robots-Tag":"noindex"}})}'+err+'},'+scheduled+'};';
 fs.mkdirSync('dist/server',{recursive:true});fs.writeFileSync('dist/server/index.js',server);
 // OpenAI のホスティングで公開する場合用の設定（.gitignore 済み。存在する場合のみコピー）
 if(fs.existsSync('.openai/hosting.json')){fs.mkdirSync('dist/.openai',{recursive:true});fs.copyFileSync('.openai/hosting.json','dist/.openai/hosting.json')}
