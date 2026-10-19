@@ -54,7 +54,8 @@ export async function api(req,env){
  return res;
 }
 async function route(req,env){
- const url=new URL(req.url),isSetlist=/^\/api\/setlists(\/|$)/.test(url.pathname),match=url.pathname.match(/^\/api\/events(?:\/([a-f0-9]{24})(?:\/slots\/([a-f0-9]{12})\/(connect-key|connect|link))?)?$/);if(!match&&!isSetlist)return json({error:'ページが見つかりません'},404);
+ const url=new URL(req.url);if(url.pathname==='/api/admin/list')return adminList(req,env,url);
+ const isSetlist=/^\/api\/setlists(\/|$)/.test(url.pathname),match=url.pathname.match(/^\/api\/events(?:\/([a-f0-9]{24})(?:\/slots\/([a-f0-9]{12})\/(connect-key|connect|link))?)?$/);if(!match&&!isSetlist)return json({error:'ページが見つかりません'},404);
  if(!env.BUCKET)return json({error:'保存先の準備ができていません。時間をおいて再度お試しください。'},503);
  if(!['GET','POST','PUT','DELETE'].includes(req.method))return json({error:'対応していない操作です'},405);
  if(req.method!=='GET'&&!originAllowed(req,env))return json({error:'許可されていない操作です'},403);
@@ -209,6 +210,23 @@ async function slotRoute(req,env,id,slotId,action){
   return json({linked:false});
  }
  return json({error:'ページが見つかりません'},404);
+}
+// 運営管理：管理キー（環境変数 ADMIN_TOKEN）を持つ人だけが、イベント・セトリの状態の一覧を取得できる
+// 入力内容（タイトル・日付・会場・曲名・メモ等）、秘密キー、完全なID（閲覧ページを開けてしまう）は返さない
+const ADMIN_PAGE=40; // 一覧1回＋読み出し40回。Workers無料プランのサブリクエスト上限（50）に収める
+async function adminList(req,env,url){
+ if(req.method!=='GET')return json({error:'対応していない操作です'},405);
+ if(!env.BUCKET)return json({error:'保存先の準備ができていません。'},503);
+ const token=req.headers.get('Authorization')?.replace(/^Bearer /,'');
+ if(!env.ADMIN_TOKEN)return json({error:'管理画面は設定されていません。'},403);
+ if(!token||await digest(token)!==await digest(env.ADMIN_TOKEN))return json({error:'管理キーが正しくありません。'},403);
+ const type=url.searchParams.get('type');if(type!=='events'&&type!=='setlists')return json({error:'入力内容を確認してください'},400);
+ const cursor=url.searchParams.get('cursor')||undefined,page=await env.BUCKET.list({prefix:type+'/',cursor,limit:ADMIN_PAGE});
+ const items=(await Promise.all(page.objects.map(async o=>{const obj=await env.BUCKET.get(o.key);if(!obj)return null;const r=await obj.json(),base={id:o.key.split('/')[1].slice(0,6),updatedAt:r.updatedAt||null,revision:r.revision||0,expiresAt:r.expiresAt||null,expired:expired(r),plan:r.plan==='paid'?'paid':'free'};
+  if(type==='events'){const acts=r.data?.acts||[],slots=acts.filter(a=>a.kind!=='break');return {...base,slots:slots.length,breaks:acts.length-slots.length,connectKeys:Object.keys(r.connect||{}).length,links:Object.keys(r.links||{}).length}}
+  const its=r.data?.items||[];return {...base,songs:its.filter(i=>i.kind==='song').length,items:its.length,videos:(r.data?.videos||[]).length,published:!!r.publication,publishedAt:r.publication?.publishedAt||null,firstPublishedAt:r.firstPublishedAt||null,publishedVersion:r.publishedVersion||0,linked:!!r.link,memberGen:r.memberGen||1};
+ }))).filter(Boolean);
+ return json({items,cursor:page.truncated?page.cursor:null});
 }
 // 定期実行（Cron Trigger）用：期限切れのイベント・セトリと古いレート制限カウンタを削除
 export async function cleanup(env){

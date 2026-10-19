@@ -239,6 +239,18 @@ assert.equal(Object.keys((await(await call('/'+E2.id)).json()).setlists).length,
 assert.equal((await sl('/'+L2.id,'DELETE',undefined,L2.editToken)).status,200);assert.deepEqual((await(await call('/'+E2.id)).json()).setlists,{});
 // 複製は紐づけを引き継がない（POSTは link を受け付けない）
 r=await sl('','POST',{data:{...sd},link:{eventId:E2.id,slotId:s2}},undefined,'203.0.113.132');const cp=await r.json();assert.equal((await(await sl('/'+cp.id,'GET',undefined,cp.editToken)).json()).link,null);}
+// 運営管理の一覧：管理キー必須。入力内容・秘密キー・完全なIDを返さない
+{const adm=(q,token,e=env)=>api(new Request('https://example.com/api/admin/list'+q,{headers:token?{Authorization:'Bearer '+token}:{}}),e);
+assert.equal((await adm('?type=events','x')).status,403,'ADMIN_TOKEN 未設定なら拒否');
+const aenv={...env,ADMIN_TOKEN:'a'.repeat(64)};
+assert.equal((await adm('?type=events',undefined,aenv)).status,403);assert.equal((await adm('?type=events','b'.repeat(64),aenv)).status,403);
+assert.equal((await adm('?type=config','a'.repeat(64),aenv)).status,400);
+const r1=await sl('','POST',{data:{...sd,title:'秘密のタイトル',memo:'秘密のメモ'}},undefined,'203.0.113.140'),s1=await r1.json();
+for(const type of ['events','setlists']){const r=await adm('?type='+type,'a'.repeat(64),aenv);assert.equal(r.status,200);const body=await r.json(),txt=JSON.stringify(body);assert.ok(body.items.length>0);
+ for(const secret of ['秘密のタイトル','秘密のメモ','HAND-CLAP','だぁめんず','夜明け',s1.id,s1.editToken,s1.memberToken,'editHash','memberHash','2026-10-24'])assert.ok(!txt.includes(secret),type+'に含めない: '+secret);
+ assert.ok(body.items.every(i=>/^[a-f0-9]{6}$/.test(i.id)),'IDは先頭6文字のみ');}
+const st=(await(await adm('?type=setlists','a'.repeat(64),aenv)).json()).items.find(i=>i.id===s1.id.slice(0,6));assert.equal(st.songs,2);assert.equal(st.published,false);
+assert.equal((await api(new Request('https://example.com/api/admin/list?type=events',{method:'POST',headers:{Authorization:'Bearer '+'a'.repeat(64)}}),aenv)).status,405);}
 // 期限切れ・定期削除
 const exp=JSON.parse(records.get('setlists/'+big.id).value);exp.expiresAt=new Date(Date.now()-1000).toISOString();records.set('setlists/'+big.id,{...records.get('setlists/'+big.id),value:JSON.stringify(exp),customMetadata:{expiresAt:exp.expiresAt}});
 assert.equal((await cleanup(env)).setlists,1);assert.equal(records.has('setlists/'+big.id),false);
@@ -251,4 +263,4 @@ for(let i=0;i<CREATE_LIMIT_PER_HOUR;i++)await sl('','POST',{data:sd},undefined,'
 // CORS：許可外オリジンからの作成は拒否
 assert.equal((await api(new Request('https://x.dev/api/setlists',{method:'POST',headers:{Origin:'https://evil.example','Content-Type':'application/json'},body:JSON.stringify({data:sd})}),env)).status,403);
 }
-console.log('PASS: 既存9項目 + OPEN/END時間, 休憩, 参考URL, チャージ, 不正入力400, 作成回数制限429, IP非保存, 期限切れ404/削除, 定期削除, 保存期間(a)・プラン別, 削除, IPハッシュ秘密値, CORS, セトリ（作成・メンバー閲覧・権限・競合・入力チェック・キー再発行・期限切れ・削除・公開・公開更新・公開停止・動画リンク）, 紐づけ（両権限・二重紐づけ拒否・並べ替え・解除・削除・公開時のみ導線・戻りリンク）');
+console.log('PASS: 既存9項目 + OPEN/END時間, 休憩, 参考URL, チャージ, 不正入力400, 作成回数制限429, IP非保存, 期限切れ404/削除, 定期削除, 保存期間(a)・プラン別, 削除, IPハッシュ秘密値, CORS, セトリ（作成・メンバー閲覧・権限・競合・入力チェック・キー再発行・期限切れ・削除・公開・公開更新・公開停止・動画リンク）, 紐づけ（両権限・二重紐づけ拒否・並べ替え・解除・削除・公開時のみ導線・戻りリンク）, 運営管理の一覧（管理キー・内容非表示）');

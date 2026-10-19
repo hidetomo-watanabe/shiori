@@ -1,5 +1,25 @@
 (async()=>{
 if(new URLSearchParams(location.search).has('setlist'))return; // セトリ画面は setlist.js が担当
+// 運営管理（?page=admin）：管理キーでイベント・セトリの状態の一覧を表示する。入力内容・完全なIDはAPIが返さない
+if(new URLSearchParams(location.search).get('page')==='admin'){document.title='運営管理｜ライブのしおり';{const m=document.createElement('meta');m.name='robots';m.content='noindex';document.head.append(m)}
+ const $=id=>document.getElementById(id),API=(document.querySelector('meta[name="api-base"]')?.content||'').replace(/\/$/,''),KEYNAME='live-shiori-admin';
+ const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const at=iso=>iso?new Date(iso).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+ document.querySelector('.intro').outerHTML='<section class="intro"><h1><span>運営管理</span></h1><p>イベント・セトリの状態の一覧です。入力内容（タイトル・曲名・メモなど）は表示しません。</p></section>';
+ document.querySelector('.workspace').outerHTML=`<div class="admin"><form class="card admin-login" id="admin-form"><label>管理キー<input id="admin-key" type="password" autocomplete="off"></label><button class="primary">一覧を表示</button><p class="tip">管理キーはこのタブを閉じると消えます。</p></form><p id="admin-status" role="status"></p><div id="admin-body"></div></div>`;
+ document.documentElement.classList.remove('loading');
+ const fetchAll=async(type,key)=>{let items=[],cursor='';for(let n=0;n<25;n++){const r=await fetch(API+'/api/admin/list?type='+type+(cursor?'&cursor='+encodeURIComponent(cursor):''),{cache:'no-store',headers:{Authorization:'Bearer '+key}});const body=await r.json().catch(()=>null);if(!r.ok||!body)throw Error(body?.error||'読み込めませんでした（'+r.status+'）');items=items.concat(body.items);if(!body.cursor)break;cursor=body.cursor}return items.sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)))};
+ const table=(head,rows)=>`<div class="admin-table"><table><thead><tr>${head.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')||`<tr><td colspan="${head.length}">ありません</td></tr>`}</tbody></table></div>`;
+ const show=async key=>{$('admin-status').textContent='読み込み中…';try{const [events,setlists]=await Promise.all([fetchAll('events',key),fetchAll('setlists',key)]);try{sessionStorage.setItem(KEYNAME,key)}catch{}
+  const live=a=>a.filter(x=>!x.expired);
+  $('admin-body').innerHTML=`<div class="admin-summary"><div><b>${live(events).length}</b>イベント</div><div><b>${live(setlists).length}</b>セトリ</div><div><b>${live(setlists).filter(x=>x.published).length}</b>公開中のセトリ</div><div><b>${live(setlists).filter(x=>x.linked).length}</b>紐づけありのセトリ</div></div>
+<h2>イベント</h2>${table(['ID','最終更新','保存回数','出演枠','休憩','紐づけ用リンク','紐づけ','保存期限'],events.map(e=>`<tr class="${e.expired?'expired':''}"><td><code>${esc(e.id)}</code></td><td>${at(e.updatedAt)}</td><td>${e.revision}</td><td>${e.slots}</td><td>${e.breaks}</td><td>${e.connectKeys}</td><td>${e.links}</td><td>${e.expired?'期限切れ':at(e.expiresAt)}</td></tr>`))}
+<h2>セトリ</h2>${table(['ID','最終更新','保存回数','曲数','項目数','動画','公開','初回公開','紐づけ','保存期限'],setlists.map(x=>`<tr class="${x.expired?'expired':''}"><td><code>${esc(x.id)}</code></td><td>${at(x.updatedAt)}</td><td>${x.revision}</td><td>${x.songs}</td><td>${x.items}</td><td>${x.videos}</td><td>${x.published?'公開中':'—'}</td><td>${at(x.firstPublishedAt)}</td><td>${x.linked?'あり':'—'}</td><td>${x.expired?'期限切れ':at(x.expiresAt)}</td></tr>`))}
+<p class="tip">IDは先頭6文字だけを表示しています。日時は日本時間。紐づけの数は片側だけ残った情報も含みます。</p>`;$('admin-status').textContent=`${at(new Date().toISOString())} 時点`;$('admin-form').hidden=true}
+  catch(e){$('admin-status').textContent=e.message;try{sessionStorage.removeItem(KEYNAME)}catch{}}};
+ $('admin-form').onsubmit=e=>{e.preventDefault();const key=$('admin-key').value.trim();if(key)show(key)};
+ try{const saved=sessionStorage.getItem(KEYNAME);if(saved)show(saved)}catch{}
+ return;}
 // プライバシーについて（?page=privacy）：内容は実装（worker/api.mjs・各画面）と公開構成（DEPLOY.md）に合わせて更新すること
 if(new URLSearchParams(location.search).get('page')==='privacy'){document.title='プライバシーについて｜ライブのしおり';
  document.querySelector('.intro').outerHTML='<section class="intro"><h1><span>プライバシーについて</span></h1><p>ライブのしおりが扱う情報と、その保存・公開の範囲をまとめています。</p></section>';
@@ -9,6 +29,7 @@ if(new URLSearchParams(location.search).get('page')==='privacy'){document.title=
 <h2>見られる人</h2><ul><li>イベントの閲覧リンクを知っている人は、誰でもイベントの内容を見られます。</li><li>公開前のセトリは、メンバー用リンクまたは編集リンクを知っている人だけが見られます。主催者を含め、イベント側には表示されません。</li><li>公開したセトリは、公開セトリのリンクを知っている人が誰でも見られます。メンバー向けメモ・MC・休憩・演奏時間は公開されません。</li><li>リンクは転送されると、転送先の人も同じように見られます。</li></ul><p>イベント・セトリのページは検索エンジンに載らないよう設定していますが、アクセスを制限するものではありません。公開停止や削除をしても、すでに保存・転載・撮影された内容は取り消せません。</p>
 <h2>保存期間と削除</h2><p>イベント・セトリとも、開催日の90日後（開催日が未設定なら最終更新の180日後。いずれも保存から最低30日）に自動で削除します。編集リンクからいつでも削除でき、削除するとすべてのリンクが使えなくなります。</p>
 <h2>アクセス情報</h2><p>短時間の大量作成を防ぐため、作成時に接続元のIPアドレスを秘密の値と組み合わせて元に戻せない形に変換し、1時間単位の回数だけを記録します（IPアドレスそのものは保存しません）。このカウンタは毎日の定期処理で削除します（最長で1日程度残ります）。当サービスとして、閲覧の記録やアクセス解析、Cookie・広告による追跡は行っていません。</p>
+<h2>運営者による確認</h2><p>運営者は、運用状況を確認するため、イベント・セトリの件数、更新日時、保存期限、出演枠や曲の数、公開状態などの管理情報を見ることがあります。管理画面には、入力内容（タイトル・曲名・メモなど）やリンクは表示されません。</p>
 <h2>利用している外部サービス</h2><ul><li>GitHub Pages（画面の配信）</li><li>Cloudflare Workers・R2（保存と読み出し）</li><li>Google Fonts（文字の表示）</li><li>iTunes Search API（セトリの「曲を検索」を押したときのみ）</li></ul><p>ページを開くと、これらのサービスに通常の通信情報（IPアドレス、ブラウザの種類など）が送られます。「曲を検索」を押すと、その曲の曲名と原曲アーティストが Apple に送られます。各サービスでの取り扱いは、それぞれの方針に従います。</p>
 <h2>このブラウザに保存する情報</h2><p>入力途中の下書きと、開いたリンクのキーを、このブラウザ（localStorage）に保存します。共用の端末では、使い終わったらブラウザのサイトデータを削除してください。</p>
 <p class="tip">2026年10月19日 制定</p></article>`;
