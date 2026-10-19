@@ -19,7 +19,8 @@ const copyText=async(input,done,fail='リンクを選択しました。コピー
 const isMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||navigator.maxTouchPoints>1&&/Macintosh/.test(navigator.userAgent);
 const lineShare=async text=>{if(isMobile){window.open('https://line.me/R/share?text='+encodeURIComponent(text),'_blank','noopener');return}try{await navigator.clipboard.writeText(text);toast('送る内容をコピーしました。PCのLINEでトークを開き、貼り付けて送ってください。')}catch{toast('コピーできませんでした。「リンクをコピー」から送ってください。')}};
 const otherShare=async text=>{try{await navigator.share({text})}catch(e){if(e.name!=='AbortError')toast('共有できませんでした。「リンクをコピー」から送ってください。')}};
-// 印刷：ポスター（タイムテーブル・セトリ）だけを印刷する（見た目は style.css の @media print）
-document.addEventListener('click',e=>{if(e.target.closest('.print-btn'))window.print()});
+// 印刷：ポスター（タイムテーブル・セトリ）だけを印刷する。プレビューと同じ配色か、白地・黒文字（インク節約）を選べる（見た目は style.css の @media print）
+document.addEventListener('click',e=>{const b=e.target.closest('.print-btn');if(!b)return;document.documentElement.classList.toggle('print-light',b.dataset.print==='light');window.print()});
+window.addEventListener('afterprint',()=>document.documentElement.classList.remove('print-light'));
 return {API,isObj,esc,jst,jpDate,host,sha,apiCall,noindex,store,load,toast,copyText,isMobile,lineShare,otherShare};
 })();
