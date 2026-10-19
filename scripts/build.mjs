@@ -1,5 +1,5 @@
 // ビルド出力
-//   dist/pages/   … GitHub Pages に置く画面（index.html・app.js・setlist.js・style.css・CNAME）
+//   dist/pages/   … GitHub Pages に置く画面（index.html・app.js・setlist.js・style.css・ogp.png・CNAME）
 //   dist/worker/  … Cloudflare Workers に置くAPI専用 Worker
 //   dist/server/  … 画面とAPIを1本で配信する Worker（ローカル確認・Cloudflareのみで公開する場合用）
 // 環境変数
@@ -22,6 +22,7 @@ fs.rmSync('dist',{recursive:true,force:true});
 fs.mkdirSync('dist/pages',{recursive:true});
 fs.writeFileSync('dist/pages/index.html',html(API_BASE));
 for(const f of ['app.js','setlist.js','style.css'])fs.copyFileSync('public/'+f,'dist/pages/'+f);
+fs.copyFileSync('public/ogp.png','dist/pages/ogp.png');
 fs.writeFileSync('dist/pages/.nojekyll','');
 if(PAGES_DOMAIN)fs.writeFileSync('dist/pages/CNAME',PAGES_DOMAIN+'\n');
 // 2. API専用 Worker
