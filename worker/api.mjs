@@ -171,7 +171,7 @@ async function setlistRoute(req,env,url){
 }
 // イベントとセトリの紐づけ。イベント側 links[slotId]={setlistId} とセトリ側 link={eventId,slotId} が一致するときだけ有効とみなす
 // （R2はオブジェクトをまたぐトランザクションがないため。片側だけ残った情報は読み出し時に無視する）
-const CONNECT_GONE='紐づけ用リンクが正しくないか、再発行・削除されています。主催者に新しいリンクを確認してください。';
+const CONNECT_GONE='紐づけ用リンクが正しくないか、作り直し・削除されています。主催者に新しいリンクを確認してください。';
 const playable=(record,slotId)=>record.data.acts.find(a=>a.id===slotId&&a.kind!=='break');
 function assignSlotIds(data){const seen=new Set();for(const a of data.acts){if(!a.id||seen.has(a.id))a.id=random().slice(0,12);seen.add(a.id)}}
 // 保存後に存在しない出演枠（削除・休憩）の紐づけと紐づけ用キーを外す
