@@ -1,5 +1,18 @@
 (async()=>{
 if(new URLSearchParams(location.search).has('setlist'))return; // セトリ画面は setlist.js が担当
+// プライバシーについて（?page=privacy）：内容は実装（worker/api.mjs・各画面）と公開構成（DEPLOY.md）に合わせて更新すること
+if(new URLSearchParams(location.search).get('page')==='privacy'){document.title='プライバシーについて｜ライブのしおり';
+ document.querySelector('.intro').outerHTML='<section class="intro"><h1><span>プライバシーについて</span></h1><p>ライブのしおりが扱う情報と、その保存・公開の範囲をまとめています。</p></section>';
+ document.querySelector('.workspace').outerHTML=`<article class="card doc">
+<h2>アカウントはありません</h2><p>登録やログインはなく、氏名・メールアドレス・電話番号などはお預かりしません。イベントやセトリは、作成時に発行される秘密のリンク（閲覧・編集・メンバー用・紐づけ用・公開用）で見たり編集したりします。</p>
+<h2>保存する情報</h2><ul><li>イベント・セトリに入力された内容（イベント名、出演者名、曲名、メモ、コメント、動画リンクなど）</li><li>作成・更新日時、保存期限、公開状態、イベントとセトリの紐づけ</li><li>リンクの照合用データ（秘密のリンクそのものではなく、元に戻せない形に変換した値）</li></ul><p>入力欄には個人情報を書かないでください。</p>
+<h2>見られる人</h2><ul><li>イベントの閲覧リンクを知っている人は、誰でもイベントの内容を見られます。</li><li>公開前のセトリは、メンバー用リンクまたは編集リンクを知っている人だけが見られます。主催者を含め、イベント側には表示されません。</li><li>公開したセトリは、公開用リンクを知っている人が誰でも見られます。メンバー向けメモ・MC・休憩・演奏時間は公開されません。</li><li>リンクは転送されると、転送先の人も同じように見られます。</li></ul><p>イベント・セトリのページは検索エンジンに載らないよう設定していますが、アクセスを制限するものではありません。公開停止や削除をしても、すでに保存・転載・撮影された内容は取り消せません。</p>
+<h2>保存期間と削除</h2><p>イベント・セトリとも、開催日の90日後（開催日が未設定なら最終更新の180日後。いずれも保存から最低30日）に自動で削除します。編集リンクからいつでも削除でき、削除するとすべてのリンクが使えなくなります。</p>
+<h2>アクセス情報</h2><p>短時間の大量作成を防ぐため、作成時に接続元のIPアドレスを秘密の値と組み合わせて元に戻せない形に変換し、1時間単位の回数だけを記録します（IPアドレスそのものは保存しません）。このカウンタは毎日の定期処理で削除します（最長で1日程度残ります）。当サービスとして、閲覧の記録やアクセス解析、Cookie・広告による追跡は行っていません。</p>
+<h2>利用している外部サービス</h2><ul><li>GitHub Pages（画面の配信）</li><li>Cloudflare Workers・R2（保存と読み出し）</li><li>Google Fonts（文字の表示）</li></ul><p>ページを開くと、これらのサービスに通常の通信情報（IPアドレス、ブラウザの種類など）が送られます。各サービスでの取り扱いは、それぞれの方針に従います。</p>
+<h2>このブラウザに保存する情報</h2><p>入力途中の下書きと、開いたリンクのキーを、このブラウザ（localStorage）に保存します。共用の端末では、使い終わったらブラウザのサイトデータを削除してください。</p>
+<p class="tip">2026年10月19日 制定</p></article>`;
+ document.documentElement.classList.remove('loading');return;}
 const $=id=>document.getElementById(id),KEY='live-shiori-v1',ready=()=>document.documentElement.classList.remove('loading');
 const sample={title:'土曜日の、小さな音楽会',date:'',open:'12:30',start:'13:00',end:'17:00',venue:'HAND-CLAP',charge:3000,drinks:2,note:'どうぞお気軽にお越しください。',acts:[{name:'だぁめんず',play:25,change:10},{name:'馬橋ハッピーアワー',play:25,change:10},{name:'だぁめんず × 馬橋ハッピーアワー',play:30,change:0}]};
 const oldSamples=[JSON.stringify({title:'土曜日の、小さな音楽会',date:'',open:'13:30',start:'14:00',venue:'HAND-CLAP',note:'どうぞお気軽にお越しください。',acts:[{name:'だぁめんず',play:25,change:10},{name:'馬橋ハッピーアワー',play:25,change:10},{name:'だぁめんず × 馬橋ハッピーアワー',play:30,change:0}]}),JSON.stringify({title:'土曜日の、小さな音楽会',date:'',start:'14:00',venue:'HAND-CLAP',note:'開場 13:30 ／ どうぞお気軽にお越しください。',acts:[{name:'だぁめんず',play:25,change:10},{name:'おゆいさん',play:25,change:10},{name:'だぁめんず × おゆいさん',play:30,change:0}]})];
