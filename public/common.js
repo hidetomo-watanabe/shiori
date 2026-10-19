@@ -22,7 +22,7 @@ const otherShare=async text=>{try{await navigator.share({text})}catch(e){if(e.na
 // 印刷：ポスター（タイムテーブル・セトリ）だけを印刷する。プレビューと同じ配色か、白地・黒文字（インク節約）を選べる（見た目は style.css の @media print）
 document.addEventListener('click',e=>{const b=e.target.closest('.print-btn');if(!b)return;document.documentElement.classList.toggle('print-light',b.dataset.print==='light');window.print()});
 // A4縦1枚（印刷範囲 180×273mm ≒ 680×1032px。端数で2枚目にはみ出さないよう少し余らせる）に収まるよう縮小率を求める（半分より小さくはせず、超える分は次のページへ）。濃い配色は用紙の下まで伸ばす。ブラウザのメニューから印刷した場合も同じ
-window.addEventListener('beforeprint',()=>{const p=document.getElementById('poster'),root=document.documentElement;if(!p)return;p.style.width='680px';if(root.classList.contains('print-light'))p.style.padding='0 30px';const z=Math.max(.5,Math.min(1,1016/p.offsetHeight));p.style.width=p.style.padding='';root.style.setProperty('--print-zoom',z);root.style.setProperty('--print-h',Math.floor(1016/z)+'px')});
+window.addEventListener('beforeprint',()=>{const p=document.getElementById('poster'),root=document.documentElement;if(!p)return;p.style.width='680px';const z=Math.max(.5,Math.min(1,1016/p.offsetHeight));p.style.width='';root.style.setProperty('--print-zoom',z);root.style.setProperty('--print-h',Math.floor(1016/z)+'px')});
 window.addEventListener('afterprint',()=>document.documentElement.classList.remove('print-light'));
 return {API,isObj,esc,jst,jpDate,host,sha,apiCall,noindex,store,load,toast,copyText,isMobile,lineShare,otherShare};
 })();
