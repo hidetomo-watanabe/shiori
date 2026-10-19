@@ -128,15 +128,18 @@ $('save').onclick=async()=>{const missing=missingSong();if(missing){status(missi
   render();await links();status(linkError?'保存しましたが、出演枠への紐づけに失敗しました：'+linkError:created?(link?.valid?'保存して、出演枠に紐づけました。メンバー用リンクをメンバーに送ってください。':'保存しました。メンバー用リンクをメンバーに送ってください。'):'保存しました。メンバー用リンクで最新版が見られます。');}
  catch(e){if(e.status===409&&!isNew()){try{const latest=await apiCall('/api/setlists/'+id,{headers:auth()});if(!validate(latest.data))throw Error('データ形式が正しくありません');status('');showConflict('別の画面で先に更新されています。どちらを残しますか？',state,latest,true)}catch(e2){status(e2.message)}}else status(e.message);}
  finally{button.disabled=false;button.textContent=isNew()?'保存してメンバー用リンクを発行':'変更を保存';}};
-const copy=(input,done)=>async()=>{try{await navigator.clipboard.writeText($(input).value);status(done)}catch{$(input).select();status('リンクを選択しました。コピーしてください。')}};
+const copy=(input,done)=>async()=>{try{await navigator.clipboard.writeText($(input).value);notify(done)}catch{$(input).select();notify('リンクを選択しました。コピーしてください。')}};
 $('copy-member').onclick=copy('member-url','メンバー用リンクをコピーしました。');
 $('copy-edit').onclick=copy('edit-url','編集リンクをコピーしました。なくさないように保管してください。');
 $('copy-public').onclick=copy('public-url','公開セトリのリンクをコピーしました。');
+// 押したボタンから離れた案内欄だと気づきにくいため、コピー・共有の結果は画面下の通知（トースト）にも出す
+const toast=msg=>{let t=document.getElementById('toast');if(!t){t=document.createElement('div');t.id='toast';t.setAttribute('aria-live','polite');document.body.append(t)}t.textContent=msg;t.classList.add('show');clearTimeout(t.timer);t.timer=setTimeout(()=>t.classList.remove('show'),4000)};
+const notify=msg=>{status(msg);toast(msg)};
 // LINEで送る：LINE公式の共有URL（アプリが開き、送る相手を選べる）。端末の共有メニューは、使える端末でだけ「ほかのアプリで送る」として出す
 // PCでは共有URLがLINEアプリを開けずLINEのトップページに飛ぶため、送る内容をコピーして貼り付けてもらう（iPadはMacとして名乗るのでタッチ対応で判定）
 const isMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||navigator.maxTouchPoints>1&&/Macintosh/.test(navigator.userAgent);
-const lineShare=async text=>{if(isMobile){window.open('https://line.me/R/share?text='+encodeURIComponent(text),'_blank','noopener');return}try{await navigator.clipboard.writeText(text);status('送る内容をコピーしました。PCのLINEでトークを開き、貼り付けて送ってください。')}catch{status('コピーできませんでした。「リンクをコピー」から送ってください。')}};
-const otherShare=async text=>{try{await navigator.share({text})}catch(e){if(e.name!=='AbortError')status('共有できませんでした。「リンクをコピー」から送ってください。')}};
+const lineShare=async text=>{if(isMobile){window.open('https://line.me/R/share?text='+encodeURIComponent(text),'_blank','noopener');return}try{await navigator.clipboard.writeText(text);notify('送る内容をコピーしました。PCのLINEでトークを開き、貼り付けて送ってください。')}catch{notify('コピーできませんでした。「リンクをコピー」から送ってください。')}};
+const otherShare=async text=>{try{await navigator.share({text})}catch(e){if(e.name!=='AbortError')notify('共有できませんでした。「リンクをコピー」から送ってください。')}};
 const publicText=()=>(state.title||'セトリ')+'\n'+$('public-url').value;
 $('send-public').onclick=()=>lineShare(publicText());$('send-public-other').hidden=!navigator.share;$('send-public-other').onclick=()=>otherShare(publicText());
 $('pub-preview').onclick=()=>{setPreview('public');$('poster').scrollIntoView({behavior:'smooth',block:'start'})};

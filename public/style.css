@@ -24,3 +24,4 @@
 @media(max-width:760px){.entries{grid-template-columns:1fr}}
 #c-mine h3{margin-top:22px}
 .deleted{white-space:pre-line}
+#toast{position:fixed;left:50%;bottom:24px;z-index:20;max-width:calc(100% - 32px);padding:13px 18px;border-radius:10px;background:#121412;color:#f1f0e8;font-size:13px;line-height:1.6;box-shadow:0 10px 30px #0000004d;transform:translate(-50%,20px);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}#toast.show{opacity:1;transform:translate(-50%,0)}.viewer #toast{background:#f1f0e8;color:#121412}
