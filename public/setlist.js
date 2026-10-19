@@ -35,7 +35,9 @@ if(!isNew()&&!isConnect){
  // 紐づけ用リンクから「新しくつくる」を選んだ場合：イベント名・出演者名・開催日・会場を入力済みにし、初回保存後に紐づける
  try{const p=JSON.parse(localStorage.getItem(pendingKey));if(isObj(p)&&/^[a-f0-9]{24}$/.test(p.eventId)&&/^[a-f0-9]{12}$/.test(p.slotId)&&/^[a-f0-9]{48}$/.test(p.connectToken)&&isObj(p.event)&&isObj(p.slot))pending=p}catch{}
  // 作成途中の下書きがある場合は、空欄の項目だけを埋める
- if(pending){const fill={title:String(pending.event.title||'').slice(0,100),artist:String(pending.slot.name||'').slice(0,100),date:/^\d{4}-\d{2}-\d{2}$/.test(pending.event.date)?pending.event.date:'',venue:String(pending.event.venue||'').slice(0,100)};for(const k in fill)if(!state[k])state[k]=fill[k];}}
+ if(pending){const fill={title:String(pending.event.title||'').slice(0,100),artist:String(pending.slot.name||'').slice(0,100),date:/^\d{4}-\d{2}-\d{2}$/.test(pending.event.date)?pending.event.date:'',venue:String(pending.event.venue||'').slice(0,100)};for(const k in fill)if(!state[k])state[k]=fill[k];}
+ // イベントの編集画面から来た場合（&event=）：イベントの公開情報からイベント名・開催日・会場を入力済みにする
+ else if(/^[a-f0-9]{24}$/.test(params.get('event')||'')){try{const ev=(await apiCall('/api/events/'+params.get('event'))).data,fill={title:String(ev.title||'').slice(0,100),date:/^\d{4}-\d{2}-\d{2}$/.test(ev.date)?ev.date:'',venue:String(ev.venue||'').slice(0,100)};for(const k in fill)if(!state[k])state[k]=fill[k]}catch{}}}
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const jst=(iso,withTime)=>new Date(iso).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'long',day:'numeric',...(withTime?{hour:'2-digit',minute:'2-digit'}:{})});
 const host=u=>{try{return new URL(u).hostname.replace(/^www\./,'')}catch{return u}},pad=n=>String(n).padStart(2,'0');
