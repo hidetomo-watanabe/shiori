@@ -23,3 +23,4 @@
 .entries{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:22px;max-width:640px}.entries.single{grid-template-columns:1fr;max-width:320px}.entry{display:block;padding:16px 18px;border:1px solid #cfd8cb;border-radius:10px;background:#fff;color:#214f40;text-decoration:none}.entry:hover{border-color:#285842;background:#fbfdf8}.entry b{display:block;font-size:15px}.entry b::after{content:" →"}.entry small{display:block;margin-top:6px;font-size:11px;line-height:1.6;color:#7a8077}
 @media(max-width:760px){.entries{grid-template-columns:1fr}}
 #c-mine h3{margin-top:22px}
+.deleted{white-space:pre-line}
