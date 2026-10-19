@@ -57,7 +57,9 @@ if(eventId&&!view){links();$('share').textContent='変更を保存・公開';$('
 if(draft&&JSON.stringify(draft.data)!==JSON.stringify(state)){if(draft.revision===revision){state=draft.data;dirty=true;fillForm();$('status').textContent='前回の未保存の変更を復元しました。「変更を保存・公開」を押すと反映されます。'}else showConflict('このブラウザに未保存の下書きがありますが、その後に別の画面で更新されています。どちらで編集を続けますか？',draft.data,{data:state,revision},false)}}
 $('copy-edit').onclick=async()=>{try{await navigator.clipboard.writeText($('edit-url').value);$('status').textContent='編集リンクをコピーしました。自分用に保管してください。'}catch{$('edit-url').select();$('status').textContent='編集リンクを選択しました。コピーしてください。'}};
 // LINEで送る：LINE公式の共有URL（アプリが開き、送る相手を選べる）。端末の共有メニューは、使える端末でだけ「ほかのアプリで送る」として出す
-const lineShare=text=>window.open('https://line.me/R/share?text='+encodeURIComponent(text),'_blank','noopener');
+// PCでは共有URLがLINEアプリを開けずLINEのトップページに飛ぶため、送る内容をコピーして貼り付けてもらう（iPadはMacとして名乗るのでタッチ対応で判定）
+const isMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||navigator.maxTouchPoints>1&&/Macintosh/.test(navigator.userAgent);
+const lineShare=async text=>{if(isMobile){window.open('https://line.me/R/share?text='+encodeURIComponent(text),'_blank','noopener');return}try{await navigator.clipboard.writeText(text);$('status').textContent='送る内容をコピーしました。PCのLINEでトークを開き、貼り付けて送ってください。'}catch{$('status').textContent='コピーできませんでした。「リンクをコピー」から送ってください。'}};
 const otherShare=async text=>{try{await navigator.share({text})}catch(e){if(e.name!=='AbortError')$('status').textContent='共有できませんでした。「リンクをコピー」から送ってください。'}};
 const shareText=()=>(state.title||'ライブのタイムテーブル')+'\n'+$('share-url').value;
 $('send').onclick=()=>lineShare(shareText());$('send-other').hidden=!navigator.share;$('send-other').onclick=()=>otherShare(shareText());

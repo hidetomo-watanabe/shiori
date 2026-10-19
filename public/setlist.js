@@ -133,7 +133,9 @@ $('copy-member').onclick=copy('member-url','メンバー用リンクをコピー
 $('copy-edit').onclick=copy('edit-url','編集リンクをコピーしました。なくさないように保管してください。');
 $('copy-public').onclick=copy('public-url','公開セトリのリンクをコピーしました。');
 // LINEで送る：LINE公式の共有URL（アプリが開き、送る相手を選べる）。端末の共有メニューは、使える端末でだけ「ほかのアプリで送る」として出す
-const lineShare=text=>window.open('https://line.me/R/share?text='+encodeURIComponent(text),'_blank','noopener');
+// PCでは共有URLがLINEアプリを開けずLINEのトップページに飛ぶため、送る内容をコピーして貼り付けてもらう（iPadはMacとして名乗るのでタッチ対応で判定）
+const isMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||navigator.maxTouchPoints>1&&/Macintosh/.test(navigator.userAgent);
+const lineShare=async text=>{if(isMobile){window.open('https://line.me/R/share?text='+encodeURIComponent(text),'_blank','noopener');return}try{await navigator.clipboard.writeText(text);status('送る内容をコピーしました。PCのLINEでトークを開き、貼り付けて送ってください。')}catch{status('コピーできませんでした。「リンクをコピー」から送ってください。')}};
 const otherShare=async text=>{try{await navigator.share({text})}catch(e){if(e.name!=='AbortError')status('共有できませんでした。「リンクをコピー」から送ってください。')}};
 const publicText=()=>(state.title||'セトリ')+'\n'+$('public-url').value;
 $('send-public').onclick=()=>lineShare(publicText());$('send-public-other').hidden=!navigator.share;$('send-public-other').onclick=()=>otherShare(publicText());
