@@ -1,11 +1,11 @@
 // セトリ画面：?setlist=new（作成）／?setlist={id}#edit=…（編集）／?setlist={id}#member=…（メンバー閲覧）／?setlist={id}（公開。キーを持つ端末では &view=1 で公開セトリ）／?setlist=connect&event=…&slot=…#connect=…（出演枠への紐づけ）。それ以外のURLでは何もしない
 (async()=>{
 const params=new URLSearchParams(location.search);let id=params.get('setlist');if(id===null)return;
+const {API,isObj,esc,jst,jpDate,host,sha,apiCall,noindex,store,load,toast,copyText,lineShare,otherShare}=shiori;
 const $=id=>document.getElementById(id),KEY='live-shiori-v1',main=document.querySelector('main'),ready=()=>document.documentElement.classList.remove('loading');
-const API=(document.querySelector('meta[name="api-base"]')?.content||'').replace(/\/$/,'');
-{const m=document.createElement('meta');m.name='robots';m.content='noindex';document.head.append(m);}
+noindex();
 document.title='セトリ｜ライブのしおり';
-const isObj=v=>v!==null&&typeof v==='object'&&!Array.isArray(v),str=(v,max)=>typeof v==='string'&&v.length<=max,KINDS=['song','mc','break'];
+const str=(v,max)=>typeof v==='string'&&v.length<=max,KINDS=['song','mc','break'];
 // サーバーと同じ制約。ただし作成途中の下書きを扱うため、曲名の必須チェックは保存時に別途行う
 function validate(d){return isObj(d)&&str(d.title,100)&&str(d.artist,100)&&typeof d.date==='string'&&/^(|\d{4}-\d{2}-\d{2})$/.test(d.date)&&str(d.venue,100)&&str(d.comment,1500)&&str(d.memo,1500)&&Array.isArray(d.items)&&d.items.length>0&&d.items.length<=100&&d.items.every(i=>isObj(i)&&KINDS.includes(i.kind)&&str(i.title,200)&&(i.artist===undefined||i.kind==='song'&&str(i.artist,200))&&(i.sec===null||Number.isInteger(i.sec)&&i.sec>=1&&i.sec<=14400)&&str(i.memo,500))&&(d.videos===undefined||Array.isArray(d.videos)&&d.videos.length<=5&&d.videos.every(validVideo))}
 const validVideo=u=>str(u,2048)&&/^https:\/\/[^\s/?#]+\S*$/.test(u),normalize=d=>({...d,videos:d.videos||[]});
@@ -14,9 +14,6 @@ const toPublic=d=>({title:d.title,artist:d.artist,date:d.date,venue:d.venue,comm
 const LABEL={song:'曲',mc:'MC',break:'休憩'},newItem=k=>k==='song'?{kind:'song',title:'',artist:'',sec:null,memo:''}:{kind:k,title:LABEL[k],sec:null,memo:''};
 const blank=()=>({title:'',artist:'',date:'',venue:'',comment:'',memo:'',videos:[],items:[newItem('song')]});
 const tokenKey=(role,id)=>KEY+'-setlist-'+role+'-'+id,draftKey=()=>KEY+'-setlist-draft-'+id;
-const store=(k,v)=>{try{if(v)localStorage.setItem(k,v);else localStorage.removeItem(k)}catch{}},load=k=>{try{return localStorage.getItem(k)||''}catch{return ''}};
-const apiCall=async(path,options={})=>{let r;try{r=await fetch(API+path,{cache:'no-store',...options})}catch{throw Error('通信に失敗しました。電波の良い場所で再度お試しください。')}let body=null;try{body=await r.json()}catch{}if(!r.ok||!body)throw Object.assign(Error(body?.error||(r.status===429?'短時間に作成できる上限に達しました。時間をおいて再度お試しください。':r.status>=500?'サーバーで問題が発生しました。時間をおいて再度お試しください。':'通信に失敗しました（'+r.status+'）。時間をおいて再度お試しください。')),{status:r.status});return body;};
-const sha=async s=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s))),b=>b.toString(16).padStart(2,'0')).join('');
 const fail=message=>{const p=document.createElement('p'),a=document.createElement('a');p.className='deleted';p.textContent=message;a.href=location.pathname;a.textContent='ライブのしおり トップへ →';p.append(document.createElement('br'),a);main.replaceChildren(p);ready();};
 let role='edit',token='',tokenRole='',state=blank(),revision=0,updatedAt=null,expiresAt=null,memberGen=0,pendingConflict=false,draft=null,pub={published:false},link=null,savedJson='',previewMode='member',publicView=null,pending=null;
 const isNew=()=>id==='new',isConnect=id==='connect',pendingKey=KEY+'-setlist-connect';
@@ -38,9 +35,7 @@ if(!isNew()&&!isConnect){
  if(pending){const fill={title:String(pending.event.title||'').slice(0,100),artist:String(pending.slot.name||'').slice(0,100),date:/^\d{4}-\d{2}-\d{2}$/.test(pending.event.date)?pending.event.date:'',venue:String(pending.event.venue||'').slice(0,100)};for(const k in fill)if(!state[k])state[k]=fill[k];}
  // イベントの編集画面から来た場合（&event=）：イベントの公開情報からイベント名・開催日・会場を入力済みにする
  else if(/^[a-f0-9]{24}$/.test(params.get('event')||'')){try{const ev=(await apiCall('/api/events/'+params.get('event'))).data,fill={title:String(ev.title||'').slice(0,100),date:/^\d{4}-\d{2}-\d{2}$/.test(ev.date)?ev.date:'',venue:String(ev.venue||'').slice(0,100)};for(const k in fill)if(!state[k])state[k]=fill[k]}catch{}}}
-const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const jst=(iso,withTime)=>new Date(iso).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'long',day:'numeric',...(withTime?{hour:'2-digit',minute:'2-digit'}:{})});
-const host=u=>{try{return new URL(u).hostname.replace(/^www\./,'')}catch{return u}},pad=n=>String(n).padStart(2,'0');
+const pad=n=>String(n).padStart(2,'0');
 const fmt=s=>(s>=3600?Math.floor(s/3600)+':'+String(Math.floor(s%3600/60)).padStart(2,'0'):Math.floor(s/60))+':'+String(s%60).padStart(2,'0');
 // 「3:30」「3分30秒」「4」（分）を秒に。空欄は未入力（null）、範囲外・不正は NaN
 const parseSec=v=>{v=v.replace(/[０-９：]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/\s/g,'').replace(/^(\d+)分(?:(\d+)秒)?$/,(_,m,s)=>m+':'+(s||'0').padStart(2,'0'));if(v==='')return null;const m=v.match(/^(\d{1,3}):([0-5]\d)$/),s=m?Number(m[1])*60+Number(m[2]):/^\d{1,3}$/.test(v)?Number(v)*60:NaN;return s>=1&&s<=14400?s:NaN};
@@ -128,20 +123,11 @@ $('save').onclick=async()=>{const missing=missingSong();if(missing){status(missi
   render();await links();status(linkError?'保存しましたが、出演枠への紐づけに失敗しました：'+linkError:created?(link?.valid?'保存して、出演枠に紐づけました。メンバー用リンクをメンバーに送ってください。':'保存しました。メンバー用リンクをメンバーに送ってください。'):'保存しました。メンバー用リンクで最新版が見られます。');}
  catch(e){if(e.status===409&&!isNew()){try{const latest=await apiCall('/api/setlists/'+id,{headers:auth()});if(!validate(latest.data))throw Error('データ形式が正しくありません');status('');showConflict('別の画面で先に更新されています。どちらを残しますか？',state,latest,true)}catch(e2){status(e2.message)}}else status(e.message);}
  finally{button.disabled=false;button.textContent=isNew()?'保存してメンバー用リンクを発行':'変更を保存';}};
-const copy=(input,done)=>async()=>{try{await navigator.clipboard.writeText($(input).value);notify(done)}catch{$(input).select();notify('リンクを選択しました。コピーしてください。')}};
+const copy=(input,done)=>()=>copyText($(input),done);
 $('copy-member').onclick=copy('member-url','メンバー用リンクをコピーしました。');
 $('copy-edit').onclick=copy('edit-url','編集リンクをコピーしました。なくさないように保管してください。');
 $('copy-public').onclick=copy('public-url','公開セトリのリンクをコピーしました。');
-// 押したボタンから離れた案内欄だと気づきにくいため、コピー・共有の結果は画面下の通知（トースト）で出す
-const toast=msg=>{let t=document.getElementById('toast');if(!t){t=document.createElement('div');t.id='toast';t.setAttribute('aria-live','polite');document.body.append(t)}t.textContent=msg;t.classList.add('show');clearTimeout(t.timer);t.timer=setTimeout(()=>t.classList.remove('show'),4000)};
-const notify=toast; // コピー・共有の結果は通知だけに出し、保存ボタンの下の保存状態の案内は上書きしない
-// LINEで送る：LINE公式の共有URL（アプリが開き、送る相手を選べる）。端末の共有メニューは、使える端末でだけ「ほかのアプリで送る」として出す
-// PCでは共有URLがLINEアプリを開けずLINEのトップページに飛ぶため、送る内容をコピーして貼り付けてもらう（iPadはMacとして名乗るのでタッチ対応で判定）
-const isMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||navigator.maxTouchPoints>1&&/Macintosh/.test(navigator.userAgent);
-const lineShare=async text=>{if(isMobile){window.open('https://line.me/R/share?text='+encodeURIComponent(text),'_blank','noopener');return}try{await navigator.clipboard.writeText(text);notify('送る内容をコピーしました。PCのLINEでトークを開き、貼り付けて送ってください。')}catch{notify('コピーできませんでした。「リンクをコピー」から送ってください。')}};
-const otherShare=async text=>{try{await navigator.share({text})}catch(e){if(e.name!=='AbortError')notify('共有できませんでした。「リンクをコピー」から送ってください。')}};
 // 送る文面：タイトル、開催日（セトリには時間の項目がないため日付のみ）、会場、リンク
-const jpDate=d=>new Date(d+'T12:00:00+09:00').toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'long',day:'numeric',weekday:'short'});
 const shareLines=(title,url)=>[title,state.date&&jpDate(state.date),state.venue&&'@'+state.venue,url].filter(Boolean).join('\n');
 const publicText=()=>shareLines(state.title||'セトリ',$('public-url').value);
 $('send-public').onclick=()=>lineShare(publicText());$('send-public-other').hidden=!navigator.share;$('send-public-other').onclick=()=>otherShare(publicText());
