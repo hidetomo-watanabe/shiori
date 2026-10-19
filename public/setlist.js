@@ -140,7 +140,10 @@ const notify=toast; // コピー・共有の結果は通知だけに出し、保
 const isMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||navigator.maxTouchPoints>1&&/Macintosh/.test(navigator.userAgent);
 const lineShare=async text=>{if(isMobile){window.open('https://line.me/R/share?text='+encodeURIComponent(text),'_blank','noopener');return}try{await navigator.clipboard.writeText(text);notify('送る内容をコピーしました。PCのLINEでトークを開き、貼り付けて送ってください。')}catch{notify('コピーできませんでした。「リンクをコピー」から送ってください。')}};
 const otherShare=async text=>{try{await navigator.share({text})}catch(e){if(e.name!=='AbortError')notify('共有できませんでした。「リンクをコピー」から送ってください。')}};
-const publicText=()=>(state.title||'セトリ')+'\n'+$('public-url').value;
+// 送る文面：タイトル、開催日（セトリには時間の項目がないため日付のみ）、会場、リンク
+const jpDate=d=>new Date(d+'T12:00:00+09:00').toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'long',day:'numeric',weekday:'short'});
+const shareLines=(title,url)=>[title,state.date&&jpDate(state.date),state.venue&&'@'+state.venue,url].filter(Boolean).join('\n');
+const publicText=()=>shareLines(state.title||'セトリ',$('public-url').value);
 $('send-public').onclick=()=>lineShare(publicText());$('send-public-other').hidden=!navigator.share;$('send-public-other').onclick=()=>otherShare(publicText());
 $('pub-preview').onclick=()=>{setPreview('public');$('poster').scrollIntoView({behavior:'smooth',block:'start'})};
 if(pending){$('pending').hidden=false;$('pending-msg').textContent=`保存すると「${pending.event.title||'タイトル未入力'}」の出演枠「${pending.slot.name||'出演者未入力'}」に紐づけます。`;$('pending-cancel').onclick=()=>{store(pendingKey,'');pending=null;$('pending').hidden=true;status('紐づけをやめました。')}}
@@ -154,7 +157,7 @@ $('pub-stop').onclick=async()=>{if(!confirm('公開を停止します。\n公開
 // 複製：曲順・メモは引き継ぎ、開催日・会場・公開コメント・動画リンク・公開状態は引き継がない（新しいキーの未公開セトリになる）
 $('duplicate').onclick=async()=>{const missing=missingSong();if(missing){status(missing+'曲目の曲名を入力してください。');return}if(!confirm('このセトリを複製して、別のライブ用の新しいセトリをつくります。\n曲順・メモは引き継ぎます。開催日・会場・公開コメント・動画リンク・公開状態は引き継ぎません。複製しますか？'))return;
  const button=$('duplicate');button.disabled=true;try{const r=await apiCall('/api/setlists',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:{...structuredClone(state),title:(state.title+'（複製）').slice(0,100),date:'',venue:'',comment:'',videos:[]}})});store(tokenKey('edit',r.id),r.editToken);location.href=location.pathname+'?setlist='+r.id}catch(e){status(e.message);button.disabled=false}};
-const memberText=()=>(state.title||'セトリ')+'（メンバー用）\n'+$('member-url').value;
+const memberText=()=>shareLines((state.title||'セトリ')+'（メンバー用）',$('member-url').value);
 $('send-member').onclick=()=>lineShare(memberText());$('send-member-other').hidden=!navigator.share;$('send-member-other').onclick=()=>otherShare(memberText());
 const reissue=(kind,question,done)=>async()=>{if(!confirm(question))return;try{const r=await apiCall('/api/setlists/'+id+'/keys',{method:'POST',headers:auth(),body:JSON.stringify({kind})});if(r.editToken){token=r.editToken;store(tokenKey('edit',id),token)}memberGen=r.memberGen;await links();status(done)}catch(e){status(e.message)}};
 $('reissue-member').onclick=reissue('member','メンバー用リンクを作り直します。\n今のメンバー用リンクは使えなくなります。新しいリンクをメンバーに送り直してください。作り直しますか？','メンバー用リンクを作り直しました。新しいリンクをメンバーに送り直してください。');
