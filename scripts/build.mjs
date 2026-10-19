@@ -26,6 +26,10 @@ fs.writeFileSync('dist/pages/index.html',html(API_BASE));
 for(const f of ASSETS)fs.copyFileSync('public/'+f,'dist/pages/'+f);
 fs.copyFileSync('public/ogp.png','dist/pages/ogp.png');
 fs.writeFileSync('dist/pages/.nojekyll','');
+// 検索エンジン向け。イベント・セトリなどの個別ページは画面側で noindex にしている
+if(PAGES_DOMAIN){const origin='https://'+PAGES_DOMAIN+'/';
+ fs.writeFileSync('dist/pages/robots.txt','User-agent: *\nAllow: /\n\nSitemap: '+origin+'sitemap.xml\n');
+ fs.writeFileSync('dist/pages/sitemap.xml','<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'+['','?page=privacy'].map(p=>'<url><loc>'+origin+p+'</loc></url>\n').join('')+'</urlset>\n')}
 if(PAGES_DOMAIN)fs.writeFileSync('dist/pages/CNAME',PAGES_DOMAIN+'\n');
 // 2. API専用 Worker
 const apiWorker=api+'\nexport default {async fetch(req,env,ctx){try{if(new URL(req.url).pathname.startsWith("/api/"))return await api(req,env,ctx);return new Response("Not found",{status:404,headers:{"X-Robots-Tag":"noindex"}})}'+err+'},'+scheduled+'};';

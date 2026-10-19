@@ -9,7 +9,7 @@ const host=u=>{try{return new URL(u).hostname.replace(/^www\./,'')}catch{return 
 const sha=async s=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s))),b=>b.toString(16).padStart(2,'0')).join('');
 // API呼び出し：失敗時は利用者向けの文言と status 付きの Error を投げる
 const apiCall=async(path,options={})=>{let r;try{r=await fetch(API+path,{cache:'no-store',...options})}catch{throw Error('通信に失敗しました。電波の良い場所で再度お試しください。')}let body=null;try{body=await r.json()}catch{}if(!r.ok||!body)throw Object.assign(Error(body?.error||(r.status===429?'短時間に作成できる上限に達しました。時間をおいて再度お試しください。':r.status>=500?'サーバーで問題が発生しました。時間をおいて再度お試しください。':'通信に失敗しました（'+r.status+'）。時間をおいて再度お試しください。')),{status:r.status});return body;};
-const noindex=()=>{const m=document.createElement('meta');m.name='robots';m.content='noindex';document.head.append(m)};
+const noindex=()=>{const m=document.createElement('meta');m.name='robots';m.content='noindex';document.head.append(m);document.querySelector('link[rel=canonical]')?.remove()};
 const store=(k,v)=>{try{if(v)localStorage.setItem(k,v);else localStorage.removeItem(k)}catch{}},load=k=>{try{return localStorage.getItem(k)||''}catch{return ''}};
 // 押したボタンから離れた案内欄だと気づきにくいため、コピー・共有の結果は画面下の通知（トースト）で出す。保存ボタンの下の保存状態の案内は上書きしない
 const toast=msg=>{let t=document.getElementById('toast');if(!t){t=document.createElement('div');t.id='toast';t.setAttribute('aria-live','polite');document.body.append(t)}t.textContent=msg;t.classList.add('show');clearTimeout(t.timer);t.timer=setTimeout(()=>t.classList.remove('show'),4000)};

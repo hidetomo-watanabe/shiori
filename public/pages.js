@@ -49,7 +49,7 @@ ${usage(st)}
  try{const saved=sessionStorage.getItem(KEYNAME);if(saved)show(saved)}catch{}
  return;}
 // プライバシーについて（?page=privacy）：内容は実装（worker/api.mjs・各画面）と公開構成（DEPLOY.md）に合わせて更新すること
-if(page==='privacy'){document.title='プライバシーについて｜ライブのしおり';
+if(page==='privacy'){document.title='プライバシーについて｜ライブのしおり';document.querySelector('link[rel=canonical]').href='https://shiori.whathides.co.jp/?page=privacy';
  document.querySelector('.intro').outerHTML='<section class="intro"><h1><span>プライバシーについて</span></h1><p>ライブのしおりが扱う情報と、その保存・公開の範囲をまとめています。</p></section>';
  document.querySelector('.workspace').outerHTML=`<article class="card doc">
 <h2>アカウントはありません</h2><p>登録やログインはなく、氏名・メールアドレス・電話番号などはお預かりしません。イベントやセトリは、作成時に発行される秘密のリンク（閲覧・編集・メンバー用・紐づけ用・公開セトリ）で見たり編集したりします。</p>
