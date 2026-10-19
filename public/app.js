@@ -1,5 +1,28 @@
 (async()=>{
 if(new URLSearchParams(location.search).has('setlist'))return; // セトリ画面は setlist.js が担当
+// このブラウザで作ったもの（?page=mine）：端末に保存された編集キー・メンバー用キーで一覧を出す。画面からはリンクしない（URLを知っている人向け）
+if(new URLSearchParams(location.search).get('page')==='mine'){document.title='このブラウザで作ったもの｜ライブのしおり';{const m=document.createElement('meta');m.name='robots';m.content='noindex';document.head.append(m)}
+ const $=id=>document.getElementById(id),API=(document.querySelector('meta[name="api-base"]')?.content||'').replace(/\/$/,''),P='live-shiori-v1-';
+ const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const day=d=>d?new Date(d+'T12:00:00+09:00').toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'numeric',day:'numeric',weekday:'short'}):'日付未定';
+ const at=iso=>iso?new Date(iso).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+ document.querySelector('.intro').outerHTML='<section class="intro"><h1><span>このブラウザで</span><span>作ったもの</span></h1><p>このブラウザで作成した、または編集リンク・メンバー用リンクを開いたイベントとセトリです。<br>別の端末やブラウザで作ったものは表示されません。</p></section>';
+ document.querySelector('.workspace').outerHTML='<div class="mine"><p id="mine-status" role="status">読み込み中…</p><div id="mine-body"></div></div>';
+ document.documentElement.classList.remove('loading');
+ const keys=[];try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i),m=k&&k.match(/^live-shiori-v1-(edit|setlist-edit|setlist-member)-([a-f0-9]{24})$/);if(m)keys.push({kind:m[1],id:m[2],key:k,token:localStorage.getItem(k)})}}catch{}
+ const editSet=new Set(keys.filter(k=>k.kind==='setlist-edit').map(k=>k.id)),targets=keys.filter(k=>!(k.kind==='setlist-member'&&editSet.has(k.id))).slice(0,90);
+ const load=async t=>{const path=t.kind==='edit'?'/api/events/':'/api/setlists/';try{const r=await fetch(API+path+t.id,{cache:'no-store',headers:{Authorization:'Bearer '+t.token}});if(r.status===404)return {...t,gone:true};const b=await r.json();if(!r.ok||!b?.data)return {...t,error:true};return {...t,b}}catch{return {...t,error:true}}};
+ const all=await Promise.all(targets.map(load)),pick=kind=>all.filter(x=>x.kind===kind).sort((a,b)=>String(b.b?.updatedAt||'').localeCompare(String(a.b?.updatedAt||'')));
+ const row=(x,href,title,meta)=>x.gone?`<div class="mine-row gone"><div><b>見つかりません</b><span>削除されたか、保存期間が終わったか、リンクが作り直されました</span></div><button class="text-btn" data-forget="${esc(x.key)}">一覧から外す</button></div>`:x.error?`<div class="mine-row gone"><div><b>読み込めませんでした</b><span>時間をおいて再度お試しください</span></div></div>`:`<a class="mine-row" href="${esc(href)}"><div><b>${esc(title)}</b><span>${meta}</span></div><span class="mine-go">開く →</span></a>`;
+ const section=(h,list,empty)=>`<h2>${h}</h2>${list.length?list.join(''):`<p class="tip">${empty}</p>`}`;
+ const events=pick('edit').map(x=>row(x,'?event='+x.id,x.b?.data.title||'タイトル未入力',x.b?[day(x.b.data.date),x.b.data.venue&&'@'+esc(x.b.data.venue),'更新 '+at(x.b.updatedAt),!x.b.manage&&'編集リンクが無効の可能性があります'].filter(Boolean).join(' · '):''));
+ const sl=x=>x.b?[x.b.data.date?day(x.b.data.date):'',x.b.publication?.published?'公開中':'未公開',x.b.link?.valid?'イベントに紐づけ済み':'','更新 '+at(x.b.updatedAt)].filter(Boolean).join(' · '):'';
+ const setlists=pick('setlist-edit').map(x=>row(x,'?setlist='+x.id,x.b?.data.title||'タイトル未入力',sl(x)));
+ const member=pick('setlist-member').map(x=>row(x,'?setlist='+x.id+'&view=member',x.b?.data.title||'タイトル未入力',sl(x)));
+ $('mine-body').innerHTML=section('イベント',events,'このブラウザで作ったイベントはありません。')+section('セトリ',setlists,'このブラウザで作ったセトリはありません。')+(member.length?section('メンバーとして見ているセトリ',member,''):'');
+ $('mine-status').textContent=targets.length?'':'このブラウザで作ったイベント・セトリはありません。';
+ $('mine-body').addEventListener('click',e=>{const k=e.target.dataset.forget;if(!k)return;try{localStorage.removeItem(k)}catch{}e.target.closest('.mine-row').remove()});
+ return;}
 // 運営管理（?page=admin）：管理キーでイベント・セトリの状態の一覧を表示する。入力内容・完全なIDはAPIが返さない
 if(new URLSearchParams(location.search).get('page')==='admin'){document.title='運営管理｜ライブのしおり';{const m=document.createElement('meta');m.name='robots';m.content='noindex';document.head.append(m)}
  const $=id=>document.getElementById(id),API=(document.querySelector('meta[name="api-base"]')?.content||'').replace(/\/$/,''),KEYNAME='live-shiori-admin';
