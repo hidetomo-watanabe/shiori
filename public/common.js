@@ -15,18 +15,17 @@ const store=(k,v)=>{try{if(v)localStorage.setItem(k,v);else localStorage.removeI
 const toast=msg=>{let t=document.getElementById('toast');if(!t){t=document.createElement('div');t.id='toast';t.setAttribute('aria-live','polite');document.body.append(t)}t.textContent=msg;t.classList.add('show');clearTimeout(t.timer);t.timer=setTimeout(()=>t.classList.remove('show'),4000)};
 // text を渡すと、リンクの代わりにその文面（名前・日時・リンク）をコピーする。コピーできない端末ではリンクの欄を選択する
 const copyText=async(input,done,fail='リンクを選択しました。コピーしてください。',text=input.value)=>{try{await navigator.clipboard.writeText(text);toast(done)}catch{input.select();toast(fail)}};
-// LINEで送る：LINE公式の共有URL（アプリが開き、送る相手を選べる）。端末の共有メニューは、使える端末でだけ「ほかのアプリで送る」として出す
+// LINEで送る：LINE公式の共有URL（アプリが開き、送る相手を選べる）
 // PCでは共有URLがLINEアプリを開けずLINEのトップページに飛び、コピーと同じことしかできないため「LINEで送る」を隠す（.pc。style.css）。iPadはMacとして名乗るのでタッチ対応で判定
 const isMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||navigator.maxTouchPoints>1&&/Macintosh/.test(navigator.userAgent);
 if(!isMobile)document.documentElement.classList.add('pc');
 const lineShare=async text=>{if(isMobile){window.open('https://line.me/R/share?text='+encodeURIComponent(text),'_blank','noopener');return}try{await navigator.clipboard.writeText(text);toast('送る内容をコピーしました。PCのLINEでトークを開き、貼り付けて送ってください。')}catch{toast('コピーできませんでした。「名前とリンクをコピー」から送ってください。')}};
-const otherShare=async(text,title)=>{try{await navigator.share(title?{title,text}:{text})}catch(e){if(e.name!=='AbortError')toast('共有できませんでした。「名前とリンクをコピー」から送ってください。')}};
-// 閲覧ページの共有ボタン：編集ページと同じ「名前とリンクをコピー」「LINEで送る」（PCでは隠す）「ほかのアプリで送る」。見た人が転送するときも名前が分かるよう、名前入りの文面を送る
-const viewShare=(text,title)=>{const $=id=>document.getElementById(id);$('view-share').hidden=false;$('view-copy').onclick=async()=>{try{await navigator.clipboard.writeText(text);toast('名前とリンクをコピーしました。LINE などに貼り付けて送ってください。')}catch{toast('コピーできませんでした。')}};$('view-send').onclick=()=>lineShare(text);$('view-send-other').hidden=!navigator.share;$('view-send-other').onclick=()=>otherShare(text,title)};
+// 閲覧ページの共有ボタン：編集ページと同じ「名前とリンクをコピー」「LINEで送る」（PCでは隠す）。見た人が転送するときも名前が分かるよう、名前入りの文面を送る
+const viewShare=text=>{const $=id=>document.getElementById(id);$('view-share').hidden=false;$('view-copy').onclick=async()=>{try{await navigator.clipboard.writeText(text);toast('名前とリンクをコピーしました。LINE などに貼り付けて送ってください。')}catch{toast('コピーできませんでした。')}};$('view-send').onclick=()=>lineShare(text)};
 // 印刷：ポスター（タイムテーブル・セトリ）だけを印刷する。プレビューと同じ配色か、白地・黒文字（インク節約）を選べる（見た目は style.css の @media print）
 document.addEventListener('click',e=>{const b=e.target.closest('.print-btn');if(!b)return;document.documentElement.classList.toggle('print-light',b.dataset.print==='light');window.print()});
 // A4縦1枚（印刷範囲 180×273mm ≒ 680×1032px。端数で2枚目にはみ出さないよう少し余らせる）に収まるよう縮小率を求める（半分より小さくはせず、超える分は次のページへ）。濃い配色は用紙の下まで伸ばす。ブラウザのメニューから印刷した場合も同じ
 window.addEventListener('beforeprint',()=>{const p=document.getElementById('poster'),root=document.documentElement;if(!p)return;p.style.width='680px';const z=Math.max(.5,Math.min(1,1016/p.offsetHeight));p.style.width='';root.style.setProperty('--print-zoom',z);root.style.setProperty('--print-h',Math.floor(1016/z)+'px')});
 window.addEventListener('afterprint',()=>document.documentElement.classList.remove('print-light'));
-return {API,isObj,esc,jst,jpDate,host,sha,apiCall,noindex,store,load,toast,copyText,isMobile,lineShare,otherShare,viewShare};
+return {API,isObj,esc,jst,jpDate,host,sha,apiCall,noindex,store,load,toast,copyText,isMobile,lineShare,viewShare};
 })();

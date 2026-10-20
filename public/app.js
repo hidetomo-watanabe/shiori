@@ -1,6 +1,6 @@
 (async()=>{
 if(new URLSearchParams(location.search).has('setlist'))return; // セトリ画面は setlist.js が担当
-const {API,isObj,esc,jst,jpDate,host,sha,apiCall,noindex,toast,copyText,lineShare,otherShare,viewShare}=shiori;
+const {API,isObj,esc,jst,jpDate,host,sha,apiCall,noindex,toast,copyText,lineShare,viewShare}=shiori;
 if(['mine','admin','privacy'].includes(new URLSearchParams(location.search).get('page')))return; // pages.js が担当
 const $=id=>document.getElementById(id),KEY='live-shiori-v1',ready=()=>document.documentElement.classList.remove('loading');
 const sample={title:'土曜日の、小さな音楽会',date:'',open:'12:30',start:'13:00',end:'17:00',venue:'HAND-CLAP',charge:3000,drinks:2,note:'どうぞお気軽にお越しください。',acts:[{name:'だぁめんず',play:25,change:10},{name:'馬橋ハッピーアワー',play:25,change:10},{name:'だぁめんず × 馬橋ハッピーアワー',play:30,change:0}]};
@@ -44,9 +44,9 @@ $('copy-edit').onclick=()=>copyText($('edit-url'),'編集リンクをコピー�
 const whenLine=()=>[state.date&&jpDate(state.date),[state.open&&'OPEN '+state.open,'START '+state.start].filter(Boolean).join(' / ')].filter(Boolean).join(' ');
 const whereLine=()=>state.venue?'@'+state.venue:'';
 const shareTitle=()=>state.title||'ライブのタイムテーブル',shareText=()=>[shareTitle(),whenLine(),whereLine(),viewUrl()].filter(Boolean).join('\n');
-$('send').onclick=()=>lineShare(shareText());$('send-other').hidden=!navigator.share;$('send-other').onclick=()=>otherShare(shareText(),shareTitle());
+$('send').onclick=()=>lineShare(shareText());
 $('copy').onclick=()=>copyText($('share-url'),'イベント名・日時とリンクをコピーしました。',undefined,shareText());
-if(view)viewShare(shareText(),shareTitle());
+if(view)viewShare(shareText());
 $('delete').onclick=async()=>{if(!confirm('「'+(state.title||'タイトル未入力')+'」を削除します。\n閲覧リンク・編集リンクとも使えなくなり、元に戻せません。削除しますか？'))return;const button=$('delete');button.disabled=true;try{await apiCall('/api/events/'+eventId,{method:'DELETE',headers:{Authorization:'Bearer '+editToken}});try{localStorage.removeItem(tokenKey(eventId));localStorage.removeItem(draftKey())}catch{}history.replaceState(null,'',location.pathname);const main=document.querySelector('main'),msg=document.createElement('p'),a=document.createElement('a');msg.className='deleted';msg.textContent='イベントを削除しました。閲覧リンク・編集リンクは使えなくなりました。';a.href=location.pathname;a.textContent='新しいタイムテーブルをつくる →';msg.append(document.createElement('br'),a);main.replaceChildren(msg);}catch(e){$('status').textContent=e.message;button.disabled=false;}};
 // 出演者のセトリ：出演枠ごとの紐づけ用リンク（イベント編集キーから導出）の発行・コピーと、紐づけ状態の確認・解除。公開前のセトリの内容はAPIから返らない
 async function slotPanel(){if(view||!eventId||!editToken||!manage){$('slot-links').hidden=true;return}const rows=await Promise.all(state.acts.filter(a=>a.kind!=='break').map(async a=>{const m=a.id&&manage[a.id],name=esc(a.name||'出演者未入力');if(!m)return `<div class="slot-row"><div><b>${name}</b><span class="badge">未保存</span></div><p class="tip">「変更を保存・公開」を押すと、紐づけ用リンクを発行できます。</p></div>`;const url=m.connectGen?location.origin+location.pathname+'?setlist=connect&event='+eventId+'&slot='+a.id+'#connect='+(await sha(editToken+':connect:'+a.id+':'+m.connectGen)).slice(0,48):'',st=m.linked?(m.published?'セトリ公開中':'紐づけ済み・未公開'):m.connectGen?'未紐づけ':'リンク未発行';return `<div class="slot-row"><div><b>${name}</b><span class="badge${m.linked?' on':''}">${st}</span></div>${url?`<input readonly value="${esc(url)}" aria-label="${name}の紐づけ用リンク">`:''}<div class="slot-actions">${url?`<button class="secondary" data-slot-op="copy">名前とリンクをコピー</button><button class="line" data-slot-op="line">LINEで送る</button><button class="text-btn" data-slot-op="issue" data-slot="${a.id}">作り直す</button>`:`<button class="secondary" data-slot-op="issue" data-slot="${a.id}">紐づけ用リンクを発行</button>`}${m.linked?`<button class="text-btn" data-slot-op="unlink" data-slot="${a.id}">紐づけを解除</button>`:''}</div></div>`}));$('slot-list').innerHTML=rows.join('');$('slot-links').hidden=false;}
