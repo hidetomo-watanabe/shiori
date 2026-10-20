@@ -16,8 +16,9 @@ const toast=msg=>{let t=document.getElementById('toast');if(!t){t=document.creat
 // text を渡すと、リンクの代わりにその文面（名前・日時・リンク）をコピーする。コピーできない端末ではリンクの欄を選択する
 const copyText=async(input,done,fail='リンクを選択しました。コピーしてください。',text=input.value)=>{try{await navigator.clipboard.writeText(text);toast(done)}catch{input.select();toast(fail)}};
 // LINEで送る：LINE公式の共有URL（アプリが開き、送る相手を選べる）。端末の共有メニューは、使える端末でだけ「ほかのアプリで送る」として出す
-// PCでは共有URLがLINEアプリを開けずLINEのトップページに飛ぶため、送る内容をコピーして貼り付けてもらう（iPadはMacとして名乗るのでタッチ対応で判定）
+// PCでは共有URLがLINEアプリを開けずLINEのトップページに飛び、コピーと同じことしかできないため「LINEで送る」を隠す（.pc。style.css）。iPadはMacとして名乗るのでタッチ対応で判定
 const isMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||navigator.maxTouchPoints>1&&/Macintosh/.test(navigator.userAgent);
+if(!isMobile)document.documentElement.classList.add('pc');
 const lineShare=async text=>{if(isMobile){window.open('https://line.me/R/share?text='+encodeURIComponent(text),'_blank','noopener');return}try{await navigator.clipboard.writeText(text);toast('送る内容をコピーしました。PCのLINEでトークを開き、貼り付けて送ってください。')}catch{toast('コピーできませんでした。「名前とリンクをコピー」から送ってください。')}};
 const otherShare=async(text,title)=>{try{await navigator.share(title?{title,text}:{text})}catch(e){if(e.name!=='AbortError')toast('共有できませんでした。「名前とリンクをコピー」から送ってください。')}};
 // 閲覧ページの「共有（LINE など）」：見た人が転送するときも名前が分かるよう、名前入りの文面を送る。共有メニュー→（スマホ）LINEの共有→（PC）コピーの順

@@ -42,6 +42,8 @@
 @media print{.print-light .poster::before{background:#111}.print-light .poster .schedule-head::after{background:#111}.print-light .poster .end{border-top-color:#111!important}}
 .print-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.print-btn{display:block;width:100%;margin:0;padding:11px;border:1px solid #d4d6cd;border-radius:7px;background:#fff;color:#121412;font-weight:650}.print-btn:hover{background:#f3f4ee}.viewer .print-btn{background:transparent;border-color:#3a3f38;color:#b8f05a}.viewer .print-btn:hover{background:#1a1d1a}
 .view-share{margin-top:8px}
+/* PCでは「LINEで送る」を出さず、「名前とリンクをコピー」を横幅いっぱいにする（閲覧ページの共有ボタンは残す） */
+.pc .two>.line,.pc .slot-actions .line{display:none}.pc .two:has(>.line){grid-template-columns:1fr}
 /* 印刷：ポスターだけを画面のプレビューと同じ配色で出す（背景色は既定で印刷されないため print-color-adjust で残す）。.print-light のときは同じレイアウトのまま白地・黒文字（黒い面は黒い線の枠に） */
 @page{size:A4 portrait;margin:12mm 15mm}
 @media print{body,.viewer{background:#fff}header,footer,.intro,.editor-wrap,.preview-label,.preview-tabs,.edit-event,.share-panel,.print-btn,.view-share,#toast,.setlist-ref{display:none!important}main{max-width:none;padding:0}.workspace,.viewer .workspace{display:block;max-width:none;margin:0}.poster{box-shadow:none;-webkit-print-color-adjust:exact;print-color-adjust:exact;zoom:var(--print-zoom,1);min-height:var(--print-h,auto)}.slot,.break-memo{break-inside:avoid}}
