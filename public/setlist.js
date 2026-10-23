@@ -108,8 +108,8 @@ $('items').addEventListener('change',e=>{const {i,key}=e.target.dataset;if(key==
 let lookupSeq=0;
 const closeLookup=n=>{const box=$('lookup-'+n);if(box){box.dataset.seq='';box.innerHTML=''}};
 async function lookup(n){const it=state.items[n],box=$('lookup-'+n);if(!it.title.trim()){box.innerHTML='<p class="tip">先に曲名を入力してください。</p>';return}
- const seq=String(++lookupSeq);box.dataset.seq=seq;box.innerHTML='<p class="tip">検索中…</p>';const term=(it.title+' '+(it.artist||'')).trim(),[music,video]=await Promise.all([itunes(n,term),youtube(n,term)]);
- if(box.dataset.seq!==seq||!box.isConnected)return;box.innerHTML=music+video+`<button class="lookup-close" data-op="close" data-i="${n}">候補を閉じる</button>`;}
+ const seq=String(++lookupSeq);box.dataset.seq=seq;box.innerHTML='<p class="tip">検索中…</p>';const term=(it.title+' '+(it.artist||'')).trim(),[video,music]=await Promise.all([youtube(n,term),itunes(n,term)]);
+ if(box.dataset.seq!==seq||!box.isConnected)return;box.innerHTML=video+music+`<button class="lookup-close" data-op="close" data-i="${n}">候補を閉じる</button>`;}
 async function itunes(n,term){let list;
  try{const q=new URLSearchParams({term,country:'JP',media:'music',entity:'song',limit:'5',lang:'ja_jp'}),r=await fetch('https://itunes.apple.com/search?'+q,{referrerPolicy:'no-referrer'});if(!r.ok)throw Object.assign(Error(),{status:r.status});list=(await r.json()).results}
  catch(e){return `<div class="lookup-head">曲の長さ</div><p class="tip">${e.status===403||e.status===429?'検索の回数制限に達しました。1分ほどおいて再度お試しください。':'検索できませんでした。時間をおいて再度お試しください。'}</p>`}
