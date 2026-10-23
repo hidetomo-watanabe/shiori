@@ -52,3 +52,4 @@
 .venue-url{margin-top:6px!important;font-size:12px}.event-meta .venue a{color:inherit;text-decoration:underline;text-decoration-color:#b8f05a;text-decoration-thickness:2px;text-underline-offset:4px;overflow-wrap:anywhere}.event-meta .venue a span{font-size:.7em;margin-left:4px;color:#b8f05a}
 @media print{.print-light .poster .event-meta .venue a{text-decoration:none}.print-light .poster .event-meta .venue a span{display:none}}
 .item.song .order{grid-row:1/5}
+.lookup{display:flex;flex-wrap:wrap;column-gap:16px}.lookup-results{flex-basis:100%}
