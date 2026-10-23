@@ -6,6 +6,8 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'
 const jst=(iso,withTime)=>new Date(iso).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'long',day:'numeric',...(withTime?{hour:'2-digit',minute:'2-digit'}:{})});
 const jpDate=d=>new Date(d+'T12:00:00+09:00').toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'long',day:'numeric',weekday:'short'});
 const host=u=>{try{return new URL(u).hostname.replace(/^www\./,'')}catch{return u}};
+// URL入力：前後の空白を除き、スキームがなければ https:// を補う。http(s) 以外・500字超は null
+const normUrl=v=>{v=v.trim();const other=/^[a-z][a-z0-9+.-]*:(?!\d)/i.test(v)&&!/^https?:/i.test(v);if(v&&!/^https?:\/\//i.test(v))v='https://'+v;return v===''||!other&&/^https?:\/\/\S+$/.test(v)&&v.length<=500?v:null};const MONEY={charge:1000000,drinks:9};function fillForm(){for(const k of FIELDS)$(k).value=state[k]??'';for(const k in MONEY)$(k).value=state[k]??'';acts();}
 const sha=async s=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s))),b=>b.toString(16).padStart(2,'0')).join('');
 // API呼び出し：失敗時は利用者向けの文言と status 付きの Error を投げる
 const apiCall=async(path,options={})=>{let r;try{r=await fetch(API+path,{cache:'no-store',...options})}catch{throw Error('通信に失敗しました。電波の良い場所で再度お試しください。')}let body=null;try{body=await r.json()}catch{}if(!r.ok||!body)throw Object.assign(Error(body?.error||(r.status===429?'短時間に作成できる上限に達しました。時間をおいて再度お試しください。':r.status>=500?'サーバーで問題が発生しました。時間をおいて再度お試しください。':'通信に失敗しました（'+r.status+'）。時間をおいて再度お試しください。')),{status:r.status});return body;};

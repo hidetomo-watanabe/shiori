@@ -51,3 +51,4 @@
 .about{margin:60px 0 0;padding-top:34px;border-top:1px solid #dddfd5}.about ul{display:grid;gap:6px}.about p{margin:0 0 14px}.subpage .about,.viewer .about{display:none}@media print{.about{display:none}}
 .venue-url{margin-top:6px!important;font-size:12px}.event-meta .venue a{color:inherit;text-decoration:underline;text-decoration-color:#b8f05a;text-decoration-thickness:2px;text-underline-offset:4px;overflow-wrap:anywhere}.event-meta .venue a span{font-size:.7em;margin-left:4px;color:#b8f05a}
 @media print{.print-light .poster .event-meta .venue a{text-decoration:none}.print-light .poster .event-meta .venue a span{display:none}}
+.item.song .order{grid-row:1/5}
