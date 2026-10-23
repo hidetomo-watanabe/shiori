@@ -53,3 +53,4 @@
 @media print{.print-light .poster .event-meta .venue a{text-decoration:none}.print-light .poster .event-meta .venue a span{display:none}}
 .item.song .order{grid-row:1/5}
 .lookup{display:flex;flex-wrap:wrap;column-gap:16px}.lookup-results{flex-basis:100%}
+.lookup-head{font-size:10px;letter-spacing:1px;font-weight:700;color:#6b7468;margin:8px 0 2px}.lookup-head:first-child{margin-top:2px}.lookup-item.yt img{width:80px;height:45px;object-fit:cover;border-radius:4px;flex:none;background:#e5e9df}.lookup-item.yt div{flex:1}.yt-open{display:inline-block;margin:8px 0 4px;font-size:11px;font-weight:600;color:#121412}

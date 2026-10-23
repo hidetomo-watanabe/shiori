@@ -116,9 +116,25 @@ npx wrangler@4 secret put RATE_LIMIT_SALT   # 長いランダム文字列を入�
 | テストする | `npm test` |
 | API を呼べるドメインを増やす | `wrangler.toml` の `ALLOWED_ORIGINS` にカンマ区切りで追加して `npm run deploy:api` |
 | 利用量・費用を確認する | Cloudflare ダッシュボード → Workers / R2 の Metrics |
+| セトリの「曲を検索」で YouTube を出す | 下の「YouTube 検索（任意）」 |
 
 - GitHub Pages は配信ファイルを最大10分程度キャッシュする。ビルド時に `app.js?v=…` のように版番号を付けているため、新旧のファイルが混ざることはない。
 - APIの変更で画面側の対応が必要な場合は、**API → 画面の順**に公開する。
+
+## YouTube 検索（任意）
+
+セトリの「曲を検索」で、YouTube の動画候補を出して参考URLに入れられるようにする。未設定のあいだは「準備中」と表示し、YouTube の検索結果ページへのリンクだけを出す。
+
+1. [Google Cloud Console](https://console.cloud.google.com/) でプロジェクトを作り、**YouTube Data API v3** を有効にする。
+2. **認証情報 → APIキーを作成**。キーの制限で「API の制限」を YouTube Data API v3 のみにする（アプリケーションの制限は「なし」。Worker から呼ぶため）。
+3. キーを Worker の秘密値に登録する（画面やリポジトリには置かない）。
+
+```sh
+npx wrangler@4 secret put YOUTUBE_API_KEY
+```
+
+- 無料枠は1日10,000ユニット（検索1回100ユニット＝約100回）。超えるとその日は「上限」と表示され、翌日（太平洋時間0時）に戻る。課金を有効にしない限り費用はかからない。
+- 同じ検索語の結果は7日間 R2 に保管して使い回す（検索語そのものは保存しない）。新しい検索は IP ごとに1時間30回まで。
 
 ## 運営管理画面（任意）
 

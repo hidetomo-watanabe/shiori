@@ -32,7 +32,7 @@ assert.equal((await call(path)).status,404);assert.equal(records.has('events'+pa
 r=await call('','POST',{data});const victim=(await r.json()).id,vk='events/'+victim,v=records.get(vk);records.set(vk,{...v,customMetadata:{expiresAt:new Date(Date.now()-1).toISOString()}});
 records.set('ratelimit/1/old',{value:'5',etag:'x'});
 const before=[...records.keys()].filter(k=>k.startsWith('events/')).length;
-const result=await cleanup(env);assert.deepEqual(result,{events:1,setlists:0,ratelimit:1,stats:0});
+const result=await cleanup(env);assert.deepEqual(result,{events:1,setlists:0,youtube:0,ratelimit:1,stats:0});
 assert.equal(records.has(vk),false);assert.equal([...records.keys()].filter(k=>k.startsWith('events/')).length,before-1);assert.ok([...records.keys()].some(k=>k.startsWith('ratelimit/')),'現在のカウンタは残す');
 
 // 保存期間（a）＋プラン別
