@@ -278,8 +278,10 @@ async function adminList(req,env,url){
  return json({items,cursor:page.truncated?page.cursor:null});
 }
 // YouTube 検索（セトリの「曲を検索」）。APIキー（秘密値 YOUTUBE_API_KEY）は画面に出さない
+// 動画の長さは検索結果に含まれないため、videos.list（1回1単位）で取り足す。取れなくても検索結果は返す
 // 無料枠は1日約100回のため、同じ検索語の結果は7日間R2に保管して使い回し、新しい検索はIPごとに1時間30回まで。検索語そのものは保存しない
 export const YOUTUBE_LIMIT_PER_HOUR=30;const YOUTUBE_CACHE_DAYS=7;
+const isoSeconds=s=>{const m=/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(s||'');return m?(+m[1]||0)*3600+(+m[2]||0)*60+(+m[3]||0):0};
 const unescapeHtml=s=>String(s||'').replace(/&(amp|lt|gt|quot|#39|#x27);/g,(_,e)=>({amp:'&',lt:'<',gt:'>',quot:'"','#39':"'",'#x27':"'"}[e]));
 async function youtubeSearch(req,env,url){
  if(req.method!=='GET')return fail('対応していない操作です',405);
@@ -292,6 +294,8 @@ async function youtubeSearch(req,env,url){
  const r=await fetch('https://www.googleapis.com/youtube/v3/search?'+new URLSearchParams({part:'snippet',type:'video',maxResults:'5',regionCode:'JP',relevanceLanguage:'ja',safeSearch:'moderate',q,key:env.YOUTUBE_API_KEY}));
  if(!r.ok)return fail(r.status===403?'今日の YouTube 検索の上限に達しました。明日以降に再度お試しください。':'YouTube を検索できませんでした。時間をおいて再度お試しください。',503);
  const body=await r.json(),videos=(Array.isArray(body?.items)?body.items:[]).filter(x=>/^[\w-]{11}$/.test(x?.id?.videoId||'')).map(x=>({id:x.id.videoId,title:unescapeHtml(x.snippet?.title).slice(0,200),channel:unescapeHtml(x.snippet?.channelTitle).slice(0,100)}));
+ if(videos.length)try{const d=await fetch('https://www.googleapis.com/youtube/v3/videos?'+new URLSearchParams({part:'contentDetails',id:videos.map(v=>v.id).join(','),key:env.YOUTUBE_API_KEY}));
+  if(d.ok){const items=(await d.json())?.items,secs=new Map((Array.isArray(items)?items:[]).map(x=>[x?.id,isoSeconds(x?.contentDetails?.duration)]));for(const v of videos){const sec=secs.get(v.id);if(sec>0&&sec<=14400)v.sec=sec}}}catch{}
  await putNew(env,key,{videos,expiresAt:new Date(Date.now()+YOUTUBE_CACHE_DAYS*DAY).toISOString()});
  return json({videos});
 }
