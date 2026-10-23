@@ -16,6 +16,8 @@ try{
  const cached=[...records.keys()].filter(k=>k.startsWith('youtube/'));assert.equal(cached.length,1);assert.ok(!records.get(cached[0]).value.includes('原曲さん'),'検索語は保存しない');
  r=await yt('夜明け 原曲さん',ke);assert.equal(r.status,200);assert.equal(calls.length,1,'同じ検索語は使い回す');
  reply={status:200,body:{items:[{id:{videoId:'lmnopqrstuv'},snippet:{title:'長さなし',channelTitle:'c'}}]}};details={status:500,body:{}};r=await yt('長さが取れない',ke);assert.equal(r.status,200);assert.deepEqual(await r.json(),{videos:[{id:'lmnopqrstuv',title:'長さなし',channel:'c'}]},'長さが取れなくても検索結果は返す');
+ const before=calls.length;details={status:200,body:{items:[{id:'lmnopqrstuv',contentDetails:{duration:'PT1H2M3S'}}]}};r=await yt('長さが取れない',ke);assert.deepEqual((await r.json()).videos[0].sec,3723,'使い回すときに長さを取り直す');assert.equal(calls.length,before,'検索はやり直さない');
+ details={status:500,body:{}};r=await yt('長さが取れない',ke);assert.equal((await r.json()).videos[0].sec,3723,'取り直した長さを保存する');
  reply={status:403,body:{}};assert.equal((await yt('上限',ke)).status,503);
  reply={status:200,body:{items:[]}};for(let i=0;i<YOUTUBE_LIMIT_PER_HOUR;i++)assert.equal((await yt('曲'+i,ke,'203.0.113.201')).status,200);
  assert.equal((await yt('もう一曲',ke,'203.0.113.201')).status,429,'IPごとの回数制限');assert.equal((await yt('夜明け 原曲さん',ke,'203.0.113.201')).status,200,'使い回しは制限しない');

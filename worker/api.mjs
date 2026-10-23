@@ -278,10 +278,13 @@ async function adminList(req,env,url){
  return json({items,cursor:page.truncated?page.cursor:null});
 }
 // YouTube 検索（セトリの「曲を検索」）。APIキー（秘密値 YOUTUBE_API_KEY）は画面に出さない
-// 動画の長さは検索結果に含まれないため、videos.list（1回1単位）で取り足す。取れなくても検索結果は返す
+// 動画の長さは検索結果に含まれないため、videos.list（1回1単位）で取り足す。取れなくても検索結果は返し、使い回すときに取り直す（durations が付くまで）
 // 無料枠は1日約100回のため、同じ検索語の結果は7日間R2に保管して使い回し、新しい検索はIPごとに1時間30回まで。検索語そのものは保存しない
 export const YOUTUBE_LIMIT_PER_HOUR=30;const YOUTUBE_CACHE_DAYS=7;
 const isoSeconds=s=>{const m=/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(s||'');return m?(+m[1]||0)*3600+(+m[2]||0)*60+(+m[3]||0):0};
+async function addDurations(env,videos){if(!videos.length)return true;
+ try{const d=await fetch('https://www.googleapis.com/youtube/v3/videos?'+new URLSearchParams({part:'contentDetails',id:videos.map(v=>v.id).join(','),key:env.YOUTUBE_API_KEY}));if(!d.ok)return false;
+  const items=(await d.json())?.items,secs=new Map((Array.isArray(items)?items:[]).map(x=>[x?.id,isoSeconds(x?.contentDetails?.duration)]));for(const v of videos){const sec=secs.get(v.id);if(sec>0&&sec<=14400)v.sec=sec}return true}catch{return false}}
 const unescapeHtml=s=>String(s||'').replace(/&(amp|lt|gt|quot|#39|#x27);/g,(_,e)=>({amp:'&',lt:'<',gt:'>',quot:'"','#39':"'",'#x27':"'"}[e]));
 async function youtubeSearch(req,env,url){
  if(req.method!=='GET')return fail('対応していない操作です',405);
@@ -289,14 +292,13 @@ async function youtubeSearch(req,env,url){
  const q=(url.searchParams.get('q')||'').trim();if(!q||q.length>401)return INVALID();
  if(!env.YOUTUBE_API_KEY)return fail('YouTube の検索は準備中です。',503);
  const key='youtube/'+(await digest(q.toLowerCase())).slice(0,32),cached=await getRecord(env,key);
- if(cached&&!expired(cached.record))return json({videos:cached.record.videos});
+ if(cached&&!expired(cached.record)){const {record}=cached;if(!record.durations&&Array.isArray(record.videos)&&await addDurations(env,record.videos))await putNew(env,key,{...record,durations:true}).catch(()=>{});return json({videos:record.videos})}
  if(await rateLimited(req,env,'youtube',YOUTUBE_LIMIT_PER_HOUR))return fail('YouTube の検索回数の上限に達しました。1時間ほどおいて再度お試しください。',429,{'Retry-After':'3600'});
  const r=await fetch('https://www.googleapis.com/youtube/v3/search?'+new URLSearchParams({part:'snippet',type:'video',maxResults:'5',regionCode:'JP',relevanceLanguage:'ja',safeSearch:'moderate',q,key:env.YOUTUBE_API_KEY}));
  if(!r.ok)return fail(r.status===403?'今日の YouTube 検索の上限に達しました。明日以降に再度お試しください。':'YouTube を検索できませんでした。時間をおいて再度お試しください。',503);
  const body=await r.json(),videos=(Array.isArray(body?.items)?body.items:[]).filter(x=>/^[\w-]{11}$/.test(x?.id?.videoId||'')).map(x=>({id:x.id.videoId,title:unescapeHtml(x.snippet?.title).slice(0,200),channel:unescapeHtml(x.snippet?.channelTitle).slice(0,100)}));
- if(videos.length)try{const d=await fetch('https://www.googleapis.com/youtube/v3/videos?'+new URLSearchParams({part:'contentDetails',id:videos.map(v=>v.id).join(','),key:env.YOUTUBE_API_KEY}));
-  if(d.ok){const items=(await d.json())?.items,secs=new Map((Array.isArray(items)?items:[]).map(x=>[x?.id,isoSeconds(x?.contentDetails?.duration)]));for(const v of videos){const sec=secs.get(v.id);if(sec>0&&sec<=14400)v.sec=sec}}}catch{}
- await putNew(env,key,{videos,expiresAt:new Date(Date.now()+YOUTUBE_CACHE_DAYS*DAY).toISOString()});
+ const durations=await addDurations(env,videos);
+ await putNew(env,key,{videos,...(durations?{durations}:{}),expiresAt:new Date(Date.now()+YOUTUBE_CACHE_DAYS*DAY).toISOString()});
  return json({videos});
 }
 // 定期実行（Cron Trigger）用：期限切れのイベント・セトリ・YouTube 検索結果、古いレート制限カウンタ、保管期間（約90日）を過ぎた利用計測を削除
