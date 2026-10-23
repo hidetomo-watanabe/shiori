@@ -1,7 +1,7 @@
 // セトリ画面：?setlist=new（作成）／?setlist={id}#edit=…（編集）／?setlist={id}#member=…（メンバー閲覧）／?setlist={id}（公開。キーを持つ端末では &view=1 で公開セトリ）／?setlist=connect&event=…&slot=…#connect=…（出演枠への紐づけ）。それ以外のURLでは何もしない
 (async()=>{
 const params=new URLSearchParams(location.search);let id=params.get('setlist');if(id===null)return;
-const {API,isObj,esc,jst,jpDate,host,sha,apiCall,noindex,store,load,toast,copyText,lineShare,viewShare}=shiori;
+const {API,isObj,esc,jst,jpDate,host,normUrl,sha,apiCall,noindex,store,load,toast,copyText,lineShare,viewShare}=shiori;
 const $=id=>document.getElementById(id),KEY='live-shiori-v1',main=document.querySelector('main'),ready=()=>document.documentElement.classList.remove('loading');
 noindex();
 document.title='セトリ｜ライブのしおり';
