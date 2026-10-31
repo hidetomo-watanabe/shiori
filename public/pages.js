@@ -63,16 +63,27 @@ if(page==='admin'){document.title='運営管理｜ライブのしおり';noindex
   try{const r=await fetch(API+'/api/admin/plan',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify({type:b.dataset.type,id:b.dataset.id,plan})});const body=await r.json().catch(()=>null);if(!r.ok||!body)throw Error(body?.error||'切り替えられませんでした（'+r.status+'）');
    b.dataset.plan=body.plan;b.textContent=body.plan;b.title='押すと'+(body.plan==='paid'?'free':'paid')+'にします';b.classList.toggle('paid',body.plan==='paid');b.closest('tr').querySelector('.exp').textContent=body.expiresAt?at(body.expiresAt):'自動削除なし';shiori.toast(b.dataset.id+' を '+body.plan+' にしました')}
   catch(e){shiori.toast(e.message)}finally{b.disabled=false}});
- const show=async key=>{$('admin-status').textContent='読み込み中…';try{const [events,setlists,st]=await Promise.all([fetchAll('events',key),fetchAll('setlists',key),stats(key)]);try{sessionStorage.setItem(KEYNAME,key)}catch{}
+ // 管理用マイキー：管理キーでログインしたときだけ、このブラウザのマイキーの登録・解除ができる（POST /api/admin/mykeys）
+ const myAccount=async()=>{const my=shiori.load(shiori.MYKEY);return my?(await shiori.accountAuth(my)).Authorization.replace(/^Bearer /,''):''};
+ const mykeyApi=async(key,action,account)=>{const r=await fetch(API+'/api/admin/mykeys',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify({action,...(account?{account}:{})})});const b=await r.json().catch(()=>null);if(!r.ok||!b)throw Error(b?.error||'操作できませんでした（'+r.status+'）');return b};
+ const mykeyPanel=async key=>{const el=$('admin-mykeys');if(!el)return;const account=await myAccount();
+  const draw=st=>{el.innerHTML=`<h2>管理用マイキー</h2><p class="tip">登録したマイキーが入っているブラウザでは、管理キーを入れなくてもこの画面を開けます。登録・解除は管理キーでログインしたときだけできます。マイキーのリンクを知っている人もこの画面を開けるようになるので、自分の端末以外には送らないでください。</p><p>登録数：<b>${st.count}</b>${account?`　このブラウザのマイキー：<b>${st.registered?'登録済み':'未登録'}</b>`:''}</p>${account?`<button type="button" class="secondary" id="mykey-toggle">${st.registered?'このブラウザのマイキーの登録を解除':'このブラウザのマイキーを管理用に登録'}</button>`:'<p class="tip">このブラウザにはマイキーがありません。<a href="?page=mine">作ったもの・マイキー</a>で設定してから登録してください。</p>'}${st.count?'<button type="button" class="text-btn danger-text" id="mykey-clear">管理用マイキーをすべて解除</button>':''}`;
+   const run=async(action,msg)=>{try{draw(await mykeyApi(key,action,account));shiori.toast(msg)}catch(e){shiori.toast(e.message)}};
+   if($('mykey-toggle'))$('mykey-toggle').onclick=()=>run(st.registered?'remove':'add',st.registered?'登録を解除しました':'管理用に登録しました');
+   if($('mykey-clear'))$('mykey-clear').onclick=()=>run('clear','すべて解除しました')};
+  try{draw(await mykeyApi(key,'status',account||'0'.repeat(48)))}catch(e){el.innerHTML='<p class="tip">'+esc(e.message)+'</p>'}}; // マイキーがなければ登録数だけを見る（ダミーの値で問い合わせる）
+ const show=async(key,mykey)=>{$('admin-status').textContent='読み込み中…';try{const [events,setlists,st]=await Promise.all([fetchAll('events',key),fetchAll('setlists',key),stats(key)]);if(!mykey)try{sessionStorage.setItem(KEYNAME,key)}catch{}
   const live=a=>a.filter(x=>!x.expired);
   $('admin-body').innerHTML=`<div class="admin-summary"><div><b>${live(events).length}</b>イベント</div><div><b>${live(setlists).length}</b>セトリ</div><div><b>${live(setlists).filter(x=>x.published).length}</b>公開中のセトリ</div><div><b>${live(setlists).filter(x=>x.linked).length}</b>紐づけありのセトリ</div></div>
 ${usage(st)}
 <h2>イベント</h2>${table(['ID','プラン','最終更新','保存回数','出演枠','休憩','紐づけ用リンク','紐づけ','保存期限'],events.map(e=>`<tr class="${e.expired?'expired':''}"><td><code>${esc(e.id)}</code></td>${planCell('events',e)}<td>${at(e.updatedAt)}</td><td>${e.revision}</td><td>${e.slots}</td><td>${e.breaks}</td><td>${e.connectKeys}</td><td>${e.links}</td><td class="exp">${e.expired?'期限切れ':e.expiresAt?at(e.expiresAt):'自動削除なし'}</td></tr>`))}
 <h2>セトリ</h2>${table(['ID','プラン','最終更新','保存回数','曲数','項目数','動画','公開','初回公開','紐づけ','保存期限'],setlists.map(x=>`<tr class="${x.expired?'expired':''}"><td><code>${esc(x.id)}</code></td>${planCell('setlists',x)}<td>${at(x.updatedAt)}</td><td>${x.revision}</td><td>${x.songs}</td><td>${x.items}</td><td>${x.videos}</td><td>${x.published?'公開中':'—'}</td><td>${at(x.firstPublishedAt)}</td><td>${x.linked?'あり':'—'}</td><td class="exp">${x.expired?'期限切れ':x.expiresAt?at(x.expiresAt):'自動削除なし'}</td></tr>`))}
-<p class="tip">プランのボタンで free／paid を切り替えます（利用者の画面には出ません。paid は自動削除されません。free に戻すと通常の保存期間になり、少なくとも30日は残ります）。IDは先頭6文字だけを表示しています。日時は日本時間。紐づけの数は片側だけ残った情報も含みます。</p>`;$('admin-status').textContent=`${at(new Date().toISOString())} 時点`;$('admin-form').hidden=true;bindPlans(key)}
-  catch(e){$('admin-status').textContent=e.message;try{sessionStorage.removeItem(KEYNAME)}catch{}}};
+${st.role==='master'?'<div id="admin-mykeys"></div>':''}<p class="tip">プランのボタンで free／paid を切り替えます（利用者の画面には出ません。paid は自動削除されません。free に戻すと通常の保存期間になり、少なくとも30日は残ります）。IDは先頭6文字だけを表示しています。日時は日本時間。紐づけの数は片側だけ残った情報も含みます。</p>`;$('admin-status').textContent=`${at(new Date().toISOString())} 時点`;$('admin-form').hidden=true;bindPlans(key);if(st.role==='master')mykeyPanel(key)}
+  catch(e){if(mykey){$('admin-status').textContent='';return}$('admin-status').textContent=e.message;try{sessionStorage.removeItem(KEYNAME)}catch{}}};
  $('admin-form').onsubmit=e=>{e.preventDefault();const key=$('admin-key').value.trim();if(key)show(key)};
- try{const saved=sessionStorage.getItem(KEYNAME);if(saved)show(saved)}catch{}
+ // 管理キーを入れたタブならそれで、なければ管理用マイキー（このブラウザのマイキー）で開く。マイキーが未登録ならフォームのまま
+ let saved='';try{saved=sessionStorage.getItem(KEYNAME)||''}catch{}
+ if(saved)show(saved);else{const account=await myAccount();if(account)show(account,true)}
  return;}
 // プライバシーについて（?page=privacy）：内容は実装（worker/api.mjs・各画面）と公開構成（DEPLOY.md）に合わせて更新すること
 if(page==='privacy'){document.title='プライバシーについて｜ライブのしおり';document.querySelector('link[rel=canonical]').href='https://shiori.whathides.co.jp/?page=privacy';

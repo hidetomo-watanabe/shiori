@@ -73,7 +73,7 @@ export async function api(req,env,ctx){
  return res;
 }
 async function route(req,env){
- const url=new URL(req.url);if(url.pathname==='/api/admin/list')return adminList(req,env,url);if(url.pathname==='/api/admin/stats')return adminStats(req,env,url);if(url.pathname==='/api/admin/plan')return adminPlan(req,env);
+ const url=new URL(req.url);if(url.pathname==='/api/admin/list')return adminList(req,env,url);if(url.pathname==='/api/admin/stats')return adminStats(req,env,url);if(url.pathname==='/api/admin/plan')return adminPlan(req,env);if(url.pathname==='/api/admin/mykeys')return adminMykeys(req,env);
  const isYoutube=url.pathname==='/api/youtube',isInterest=url.pathname==='/api/interest',isAccount=url.pathname==='/api/account',isSetlist=/^\/api\/setlists(\/|$)/.test(url.pathname),match=url.pathname.match(/^\/api\/events(?:\/([a-f0-9]{24})(?:\/slots\/([a-f0-9]{12})\/(connect-key|connect|link))?)?$/);if(!match&&!isSetlist&&!isYoutube&&!isAccount&&!isInterest)return NOT_FOUND();
  if(!env.BUCKET)return fail('保存先の準備ができていません。時間をおいて再度お試しください。',503);
  if(!['GET','POST','PUT','DELETE'].includes(req.method))return fail('対応していない操作です',405);
@@ -251,27 +251,33 @@ async function bump(env,metric){
   if(await env.BUCKET.put(key,JSON.stringify(data),obj?{onlyIf:{etagMatches:obj.etag}}:undefined))return}
 }
 async function track(req,env,metric){const p=bump(env,metric).catch(()=>{}),ctx=ctxs.get(req);if(ctx?.waitUntil)ctx.waitUntil(p);else await p}
-async function adminAuth(req,env,method='GET'){
+// 運営管理の認証。管理キー（ADMIN_TOKEN）か、管理用に登録したマイキーの照合用キー（マイキーから導出した48桁）で通す
+// 成功なら 'master'（管理キー）か 'mykey' を、失敗なら応答を返す。masterOnly の操作（管理用マイキーの登録・解除）は管理キーでのみ行える
+const ADMIN_ACCOUNTS='admin/accounts';
+async function adminAccounts(env){const found=await getRecord(env,ADMIN_ACCOUNTS);return {found,hashes:Array.isArray(found?.record?.hashes)?found.record.hashes:[]}}
+async function adminAuth(req,env,method='GET',masterOnly=false){
  if(req.method!==method)return fail('対応していない操作です',405);
  if(method!=='GET'&&!originAllowed(req,env))return fail('許可されていない操作です',403);
  if(!env.BUCKET)return fail('保存先の準備ができていません。',503);
  const token=req.headers.get('Authorization')?.replace(/^Bearer /,''); // 管理キーは利用者が決める値なので形式を限定しない
- if(!env.ADMIN_TOKEN)return fail('管理画面は設定されていません。',403);
- if(!token||await digest(token)!==await digest(env.ADMIN_TOKEN))return fail('管理キーが正しくありません。',403);
- return null;
+ if(token&&env.ADMIN_TOKEN&&await digest(token)===await digest(env.ADMIN_TOKEN))return 'master';
+ if(masterOnly)return fail(env.ADMIN_TOKEN?'この操作には管理キーが必要です。':'管理画面は設定されていません。',403);
+ if(token&&/^[a-f0-9]{48}$/.test(token)&&(await adminAccounts(env)).hashes.includes(await digest(token)))return 'mykey';
+ return fail(env.ADMIN_TOKEN?'管理キーが正しくありません。':'管理画面は設定されていません。',403);
 }
+const denied=a=>a instanceof Response;
 // 直近90日（日本時間）の日別の回数。月ごとのオブジェクト最大4つを読む
 async function adminStats(req,env){
- const denied=await adminAuth(req,env);if(denied)return denied;
+ const role=await adminAuth(req,env);if(denied(role))return role;
  const now=Date.now(),days=Array.from({length:90},(_,i)=>jstDay(now-i*864e5)),months=[...new Set(days.map(d=>d.slice(0,7)))],data={};
  for(const m of months){const obj=await env.BUCKET.get('stats/'+m);if(obj)Object.assign(data,await obj.json())}
- return json({metrics:METRICS,days:days.map(date=>({date,...Object.fromEntries(METRICS.map(k=>[k,data[date]?.[k]||0]))}))});
+ return json({role,metrics:METRICS,days:days.map(date=>({date,...Object.fromEntries(METRICS.map(k=>[k,data[date]?.[k]||0]))}))});
 }
 // 運営管理：管理キー（環境変数 ADMIN_TOKEN）を持つ人だけが、イベント・セトリの状態の一覧を取得できる
 // 入力内容（タイトル・日付・会場・曲名・メモ等）、秘密キー、完全なID（閲覧ページを開けてしまう）は返さない
 const ADMIN_PAGE=40; // 一覧1回＋読み出し40回。Workers無料プランのサブリクエスト上限（50）に収める
 async function adminList(req,env,url){
- const denied=await adminAuth(req,env);if(denied)return denied;
+ const role=await adminAuth(req,env);if(denied(role))return role;
  const type=url.searchParams.get('type');if(type!=='events'&&type!=='setlists')return INVALID();
  const cursor=url.searchParams.get('cursor')||undefined,page=await env.BUCKET.list({prefix:type+'/',cursor,limit:ADMIN_PAGE});
  const items=(await Promise.all(page.objects.map(async o=>{const obj=await env.BUCKET.get(o.key);if(!obj)return null;const r=await obj.json(),base={id:o.key.split('/')[1].slice(0,6),updatedAt:r.updatedAt||null,revision:r.revision||0,expiresAt:r.expiresAt||null,expired:expired(r),plan:r.plan==='paid'?'paid':'free'};
@@ -284,7 +290,7 @@ async function adminList(req,env,url){
 // 一覧と同じく完全なIDは扱わず、一覧に出している先頭6文字で指定する。同じ先頭6文字が複数あるときは切り替えない
 // 保存期間はプランに合わせて計算し直す（基準は最終更新日時。paid は自動削除なし）。paid から free に戻すときは、すぐ消えないよう今から最低30日は残す。編集中の人と衝突しないよう revision・updatedAt は変えない
 async function adminPlan(req,env){
- const denied=await adminAuth(req,env,'POST');if(denied)return denied;
+ const role=await adminAuth(req,env,'POST');if(denied(role))return role;
  const {error,body}=await readJson(req,{maxBytes:200,maxChars:200});if(error)return error;
  if(!isObj(body)||!['events','setlists'].includes(body.type)||typeof body.id!=='string'||!/^[a-f0-9]{6}$/.test(body.id)||!['free','paid'].includes(body.plan))return INVALID();
  const keys=(await env.BUCKET.list({prefix:body.type+'/'+body.id,limit:2})).objects.map(o=>o.key);
@@ -294,6 +300,21 @@ async function adminPlan(req,env){
  const next={...record,plan:body.plan,expiresAt:exp&&new Date(Math.max(Date.parse(exp),floor)).toISOString()};
  if(!await putIf(env,keys[0],next,obj.etag))return CONFLICT();
  return json({plan:next.plan,expiresAt:next.expiresAt??null});
+}
+// 管理用マイキーの登録・解除（管理キーでのみ）。保存先 admin/accounts に、照合用キーのハッシュだけを置く（マイキーそのもの・照合用キーは保存しない）
+// action: status（このマイキーが登録済みか）／add／remove／clear（すべて解除）。account は画面がマイキーから導出した照合用キー
+const ADMIN_ACCOUNTS_MAX=10;
+async function adminMykeys(req,env){
+ const role=await adminAuth(req,env,'POST',true);if(denied(role))return role;
+ const {error,body}=await readJson(req,{maxBytes:300,maxChars:300});if(error)return error;
+ if(!isObj(body)||!['status','add','remove','clear'].includes(body.action)||(body.action!=='clear'&&!(typeof body.account==='string'&&/^[a-f0-9]{48}$/.test(body.account))))return INVALID();
+ const {found,hashes}=await adminAccounts(env),h=body.account?await digest(body.account):null;
+ let next=hashes;
+ if(body.action==='add'&&!hashes.includes(h)){if(hashes.length>=ADMIN_ACCOUNTS_MAX)return fail('登録できる管理用マイキーは'+ADMIN_ACCOUNTS_MAX+'個までです。',400);next=[...hashes,h]}
+ if(body.action==='remove')next=hashes.filter(x=>x!==h);
+ if(body.action==='clear')next=[];
+ if(next!==hashes){const rec={hashes:next,updatedAt:new Date().toISOString()};if(found){if(!await putIf(env,ADMIN_ACCOUNTS,rec,found.obj.etag))return CONFLICT()}else await putNew(env,ADMIN_ACCOUNTS,rec)}
+ return json({count:next.length,registered:!!h&&next.includes(h)});
 }
 // マイキー（端末間でキーの一覧を同期する。無料。?page=mine から使う）。保存先は accounts/{照合用キーのハッシュ}
 // 一覧は画面側でマイキーから作った鍵で暗号化してから送るため、サーバーは中身（各リンクのキー）を読めない。マイキーそのものも受け取らない（照合用キーはマイキーから導出）

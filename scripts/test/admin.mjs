@@ -39,3 +39,26 @@ r=await plan({type:'setlists',id,plan:'free'});b=await r.json();assert.equal(b.p
 const dup='setlists/'+id+'f'.repeat(18);records.set(dup,{value:JSON.stringify({...before}),etag:'d'});assert.equal((await plan({type:'setlists',id,plan:'paid'})).status,409);records.delete(dup);
 // 期限切れは切り替えない
 records.set(key,{...records.get(key),value:JSON.stringify({...rec(),expiresAt:'2020-01-01T00:00:00.000Z'})});assert.equal((await plan({type:'setlists',id,plan:'paid'})).status,404);}
+// 管理用マイキー：管理キーで登録・解除。登録したマイキーの照合用キーで一覧・利用状況・プラン切り替えができる。登録・解除はマイキーではできない
+{const K='a'.repeat(64),aenv={...env,ADMIN_TOKEN:K},acct='c'.repeat(48),other='d'.repeat(48);
+const req=(path,{token,method='GET',body,e=aenv}={})=>api(new Request('https://example.com/api/admin/'+path,{method,headers:{'Content-Type':'application/json',Origin:'https://example.com',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{})}),e);
+const mk=(body,token=K)=>req('mykeys',{token,method:'POST',body});
+assert.equal((await req('stats',{token:acct})).status,403,'未登録のマイキーは拒否');
+assert.equal((await mk({action:'add',account:acct},acct)).status,403,'マイキーでは登録できない');
+for(const b of [{action:'add'},{action:'add',account:'x'},{action:'grant',account:acct}])assert.equal((await mk(b)).status,400);
+let b=await(await mk({action:'status',account:acct})).json();assert.deepEqual(b,{count:0,registered:false});
+b=await(await mk({action:'add',account:acct})).json();assert.deepEqual(b,{count:1,registered:true});
+b=await(await mk({action:'add',account:acct})).json();assert.equal(b.count,1,'同じマイキーは二重に登録しない');
+assert.ok(!records.get('admin/accounts').value.includes(acct),'照合用キーそのものは保存しない');
+let r=await req('stats',{token:acct});assert.equal(r.status,200);assert.equal((await r.json()).role,'mykey');
+assert.equal((await(await req('stats',{token:K})).json()).role,'master');
+assert.equal((await req('list?type=events',{token:acct})).status,200);
+assert.equal((await req('stats',{token:other})).status,403,'別のマイキーは拒否');
+assert.equal((await mk({action:'remove',account:acct},acct)).status,403,'マイキーでは解除できない');
+assert.equal((await mk({action:'clear'},acct)).status,403);
+assert.equal((await req('stats',{token:acct,e:{...env}})).status,200,'管理キー未設定でも登録済みマイキーは使える');
+assert.equal((await mk({action:'add',account:other},acct)).status,403);
+b=await(await mk({action:'add',account:other})).json();assert.equal(b.count,2);
+b=await(await mk({action:'remove',account:acct})).json();assert.deepEqual(b,{count:1,registered:false});assert.equal((await req('stats',{token:acct})).status,403,'解除したら使えない');
+b=await(await mk({action:'clear'})).json();assert.equal(b.count,0);assert.equal((await req('stats',{token:other})).status,403);
+const cl=await cleanup(env);assert.ok(records.has('admin/accounts'),'定期削除で消さない');}
