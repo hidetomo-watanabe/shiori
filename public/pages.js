@@ -27,16 +27,17 @@ if(page==='mine'){document.title='このブラウザで作ったもの｜ライ�
  const list=async()=>{
  const keys=[];try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i),m=k&&k.match(/^live-shiori-v1-(edit|setlist-edit|setlist-member)-([a-f0-9]{24})$/);if(m)keys.push({kind:m[1],id:m[2],key:k,token:localStorage.getItem(k)})}}catch{}
  const editSet=new Set(keys.filter(k=>k.kind==='setlist-edit').map(k=>k.id)),targets=keys.filter(k=>!(k.kind==='setlist-member'&&editSet.has(k.id))).slice(0,90);
- const load=async t=>{const path=t.kind==='edit'?'/api/events/':'/api/setlists/';try{const r=await fetch(API+path+t.id,{cache:'no-store',headers:{Authorization:'Bearer '+t.token}});if(r.status===404)return {...t,gone:true};const b=await r.json();if(!r.ok||!b?.data)return {...t,error:true};return {...t,b}}catch{return {...t,error:true}}};
- const all=await Promise.all(targets.map(load)),pick=kind=>all.filter(x=>x.kind===kind).sort((a,b)=>String(b.b?.updatedAt||'').localeCompare(String(a.b?.updatedAt||'')));
+ const fetchOne=async t=>{const path=t.kind==='edit'?'/api/events/':'/api/setlists/';try{const r=await fetch(API+path+t.id,{cache:'no-store',headers:{Authorization:'Bearer '+t.token}});if(r.status===404)return {...t,gone:true};const b=await r.json();if(!r.ok||!b?.data)return {...t,error:true};return {...t,b}}catch{return {...t,error:true}}};
+ const all=await Promise.all(targets.map(fetchOne)),pick=kind=>all.filter(x=>x.kind===kind).sort((a,b)=>String(b.b?.updatedAt||'').localeCompare(String(a.b?.updatedAt||'')));
  const row=(x,href,title,meta)=>x.gone?`<div class="mine-row gone"><div><b>見つかりません</b><span>削除されたか、保存期間が終わったか、リンクが作り直されました</span></div><button class="text-btn" data-forget="${esc(x.key)}">一覧から外す</button></div>`:x.error?`<div class="mine-row gone"><div><b>読み込めませんでした</b><span>時間をおいて再度お試しください</span></div></div>`:`<a class="mine-row" href="${esc(href)}"><div><b>${esc(title)}</b><span>${meta}</span></div><span class="mine-go">開く →</span></a>`;
  const section=(h,list,empty)=>`<h2>${h}</h2>${list.length?list.join(''):`<p class="tip">${empty}</p>`}`;
  const events=pick('edit').map(x=>row(x,'?event='+x.id,x.b?.data.title||'タイトル未入力',x.b?[day(x.b.data.date),x.b.data.venue&&'@'+esc(x.b.data.venue),'更新 '+at(x.b.updatedAt),!x.b.manage&&'編集リンクが無効の可能性があります'].filter(Boolean).join(' · '):''));
  const sl=x=>x.b?[x.b.data.date?day(x.b.data.date):'',x.b.publication?.published?'公開中':'未公開',x.b.link?.valid?'イベントに紐づけ済み':'','更新 '+at(x.b.updatedAt)].filter(Boolean).join(' · '):'';
  const setlists=pick('setlist-edit').map(x=>row(x,'?setlist='+x.id,x.b?.data.title||'タイトル未入力',sl(x)));
  const member=pick('setlist-member').map(x=>row(x,'?setlist='+x.id+'&view=member',x.b?.data.title||'タイトル未入力',sl(x)));
- $('mine-body').innerHTML=section('イベント',events,'このブラウザで作ったイベントはありません。')+section('セトリ',setlists,'このブラウザで作ったセトリはありません。')+(member.length?section('メンバーとして見ているセトリ',member,''):'');
- $('mine-status').textContent=targets.length?'':'このブラウザで作ったイベント・セトリはありません。';};
+ const where=load(MYKEY)?'このブラウザと同じマイキーの端末で':'このブラウザで';
+ $('mine-body').innerHTML=section('イベント',events,where+'作ったイベントはありません。')+section('セトリ',setlists,where+'作ったセトリはありません。')+(member.length?section('メンバーとして見ているセトリ',member,''):'');
+ $('mine-status').textContent=targets.length?'':where+'作ったイベント・セトリはありません。';};
  $('mine-body').addEventListener('click',e=>{const k=e.target.dataset.forget;if(!k)return;store(k,'');e.target.closest('.mine-row').remove()});
  await sync();await list();
  return;}
