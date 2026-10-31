@@ -243,7 +243,7 @@ async function slotRoute(req,env,id,slotId,action){
 // 利用計測：操作の種類ごとの延べ回数を、日本時間の日別に stats/YYYY-MM（月ごとに1オブジェクト）へ記録する
 // 誰が・どこから・何を、は記録しない。同時更新はetag条件付きで数回やり直すが、取りこぼし得るため概数として扱う。計測の失敗で本来の処理を止めない
 // 有料候補への関心の計測項目（interest() を参照）
-export const INTEREST=['open','retention','design','history','separate','library'],INTEREST_LIMIT_PER_HOUR=30;
+export const INTEREST=['open','retention','design','history','separate','library','memo'],INTEREST_LIMIT_PER_HOUR=30;
 export const METRICS=['event_view','public_view','member_view','event_create','event_update','event_delete','setlist_create','setlist_update','setlist_delete','publish_first','republish','publish_update','unpublish','link','unlink','youtube_search','youtube_cache','error',...INTEREST.map(f=>'interest_'+f)];
 const jstDay=(t=Date.now())=>new Date(t+9*36e5).toISOString().slice(0,10);
 async function bump(env,metric){

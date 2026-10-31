@@ -60,12 +60,12 @@ window.addEventListener('beforeprint',()=>{const p=document.getElementById('post
 window.addEventListener('afterprint',()=>document.documentElement.classList.remove('print-light'));
 // 今後の追加機能（準備中。要件書12章 F-03〜F-05）：保存後の編集画面だけに出し、閲覧画面には出さない。未提供であること・価格未定であることを明記し、申込と誤認させない
 // 案内を開いた回数と機能別の「使ってみたい」を数えるだけ（延べ回数。どのイベント・セトリからかは送らない）。押した機能はこのブラウザに覚えて二度は送らない
-const FEATURES={retention:['保存期間の延長','開催日の90日後に消さず、過去のタイムテーブルやセトリを残せる'],design:['お店・企画のロゴやデザイン','ポスターと印刷に、ロゴや色を入れられる'],history:['変更履歴・復元','間違えて変えたり消したりしても、前の状態に戻せる'],separate:['出演者だけに見せる案内','集合・リハなどの案内を、お客さんには見せずに出演者だけに伝えられる'],library:['曲のライブラリ','よく演奏する曲を登録しておき、セトリにすぐ入れられる']};
-const UPCOMING={event:['retention','design','history','separate'],setlist:['retention','design','history','library']},INTEREST_SENT='live-shiori-v1-interest';
+const FEATURES={retention:['保存期間の延長','開催日の90日後に消さず、過去のタイムテーブルやセトリを残せる'],design:['お店・企画のロゴやデザイン','ポスターと印刷に、ロゴや色を入れられる'],history:['変更履歴・復元','間違えて変えたり消したりしても、前の状態に戻せる'],separate:['出演者だけに見せる案内','集合・リハなどの案内を、お客さんには見せずに出演者だけに伝えられる'],library:['曲のライブラリ','よく演奏する曲を登録しておき、セトリにすぐ入れられる'],memo:['運営向けメモ','搬入・リハの段取り、連絡先、精算などを、主催者側だけで残せる（閲覧ページには載らない）']};
+const UPCOMING={event:['memo','retention','design','history','separate'],setlist:['retention','design','history','library']},INTEREST_SENT='live-shiori-v1-interest';
 const sendInterest=feature=>fetch(API+'/api/interest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({feature}),keepalive:true}).catch(()=>{});
-function upcoming(kind){const el=document.getElementById('upcoming');if(!el)return;el.hidden=false;if(el.dataset.ready)return;el.dataset.ready='1';
+function upcoming(kind,skip=[]){const el=document.getElementById('upcoming');if(!el)return;el.hidden=false;if(el.dataset.ready)return;el.dataset.ready='1';
  const sent=new Set(load(INTEREST_SENT).split(',').filter(f=>FEATURES[f])),done=b=>{b.disabled=true;b.textContent='✓ 送りました'};
- el.innerHTML=`<summary>今後の追加機能（準備中）</summary><p class="tip">検討中の機能で、<b>まだ使えません</b>。有料にするか・価格はいずれも未定です。使ってみたいものがあれば押してください（回数を数えるだけで、申し込みにはなりません）。</p><ul class="upcoming-list">${UPCOMING[kind].map(f=>`<li><div><b>${FEATURES[f][0]}</b><span>${FEATURES[f][1]}</span></div><button type="button" class="vote" data-feature="${f}">使ってみたい</button></li>`).join('')}</ul>`;
+ el.innerHTML=`<summary>今後の追加機能（準備中）</summary><p class="tip">検討中の機能で、<b>まだ使えません</b>。有料にするか・価格はいずれも未定です。使ってみたいものがあれば押してください（回数を数えるだけで、申し込みにはなりません）。</p><ul class="upcoming-list">${UPCOMING[kind].filter(f=>!skip.includes(f)).map(f=>`<li><div><b>${FEATURES[f][0]}</b><span>${FEATURES[f][1]}</span></div><button type="button" class="vote" data-feature="${f}">使ってみたい</button></li>`).join('')}</ul>`;
  el.querySelectorAll('.vote').forEach(b=>{const f=b.dataset.feature;if(sent.has(f))done(b);else b.onclick=()=>{sent.add(f);store(INTEREST_SENT,[...sent].join(','));done(b);sendInterest(f)}});
  el.addEventListener('toggle',()=>{if(el.open&&!el.dataset.opened){el.dataset.opened='1';sendInterest('open')}});
 }

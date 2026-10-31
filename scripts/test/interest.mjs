@@ -11,7 +11,7 @@ assert.equal((await vote(undefined,undefined,undefined,'GET')).status,405);
 for(const b of [{feature:'paid'},{feature:''},{},'x',{feature:'interest_open'}])assert.equal((await vote(b)).status,400,'決まった機能名以外は拒否: '+JSON.stringify(b));
 assert.equal((await vote({feature:'retention'})).status,200);await vote({feature:'retention'},'203.0.113.211');await vote({feature:'open'});await vote({feature:'library',eventId:'a'.repeat(24)});
 let t1=await today();
-assert.deepEqual(Object.fromEntries(INTEREST.map(f=>['interest_'+f,t1['interest_'+f]-t0['interest_'+f]])),{interest_open:1,interest_retention:2,interest_design:0,interest_history:0,interest_separate:0,interest_library:1},'機能別に延べ回数を数える');
+assert.deepEqual(Object.fromEntries(INTEREST.map(f=>['interest_'+f,t1['interest_'+f]-t0['interest_'+f]])),{interest_open:1,interest_retention:2,interest_design:0,interest_history:0,interest_separate:0,interest_library:1,interest_memo:0},'機能別に延べ回数を数える');
 const stxt=[...records.keys()].filter(k=>k.startsWith('stats/')).map(k=>records.get(k).value).join();
 for(const x of ['a'.repeat(24),'203.0.113.210'])assert.ok(!stxt.includes(x),'計測に含めない: '+x);
 // IPごとに1時間の上限。超えた分は成功を返すが数えない
