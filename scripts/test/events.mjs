@@ -87,3 +87,17 @@ assert.equal((await call('','POST',{data:{...data,acts:[{name:'x',play:0,change:
 {const r1=await call('','POST',{data:{...data,venueUrl:'https://example.com/map'}},undefined,'203.0.113.90');assert.equal(r1.status,201);assert.equal((await (await call('/'+(await r1.json()).id)).json()).data.venueUrl,'https://example.com/map');const r2=await call('','POST',{data:{...data,venueUrl:''}},undefined,'203.0.113.91');assert.equal(Object.hasOwn((await (await call('/'+(await r2.json()).id)).json()).data,'venueUrl'),false);assert.equal((await call('','POST',{data:{...data,venueUrl:'javascript:alert(1)'}},undefined,'203.0.113.92')).status,400);}
 // チャージ：整数のみ保存（ドリンク0も保存）、不正値は400
 {const r1=await call('','POST',{data:{...data,charge:2500,drinks:1}},undefined,'203.0.113.86');assert.equal(r1.status,201);const d1=(await (await call('/'+(await r1.json()).id)).json()).data;assert.equal(d1.charge,2500);assert.equal(d1.drinks,1);{const r0=await call('','POST',{data:{...data,charge:2500,drinks:0}},undefined,'203.0.113.89');assert.equal((await (await call('/'+(await r0.json()).id)).json()).data.drinks,0);}assert.equal((await call('','POST',{data:{...data,charge:'2500'}},undefined,'203.0.113.87')).status,400);assert.equal((await call('','POST',{data:{...data,drinks:10}},undefined,'203.0.113.88')).status,400);}
+
+// 運営向けメモ（有料のみ）：閲覧用の data とは別に保存し、編集キーを持つ人にだけ返す
+{r=await call('','POST',{data,memo:'作成時は無視'});const m=await r.json(),mp='/'+m.id,mk='events/'+m.id;assert.equal(JSON.parse(records.get(mk).value).memo,undefined,'作成時（無料）は保存しない');
+ r=await call(mp,'PUT',{data,revision:1,memo:'無料'},m.editToken);assert.equal(r.status,200);assert.equal(JSON.parse(records.get(mk).value).memo,undefined,'無料では保存しない');
+ assert.equal((await(await call(mp,'GET',undefined,m.editToken)).json()).memo,undefined,'無料では編集者にも返さない');
+ assert.equal((await call(mp,'PUT',{data,revision:2,memo:'x'.repeat(1501)},m.editToken)).status,400,'長すぎるメモは拒否');assert.equal((await call(mp,'PUT',{data,revision:2,memo:1},m.editToken)).status,400);
+ const pr=JSON.parse(records.get(mk).value);pr.plan='paid';records.set(mk,{...records.get(mk),value:JSON.stringify(pr)});
+ assert.equal((await(await call(mp,'GET',undefined,m.editToken)).json()).memo,'','有料なら編集者に空のメモを返す');
+ r=await call(mp,'PUT',{data,revision:2,memo:'搬入 15:00'},m.editToken);assert.equal(r.status,200);
+ assert.equal((await(await call(mp,'GET',undefined,m.editToken)).json()).memo,'搬入 15:00');
+ const viewer=await(await call(mp)).json();assert.equal(viewer.memo,undefined,'閲覧者には返さない');assert.ok(!JSON.stringify(viewer).includes('搬入'),'閲覧の応答に含めない');
+ r=await call(mp,'PUT',{data,revision:3},m.editToken);assert.equal(JSON.parse(records.get(mk).value).memo,'搬入 15:00','memo を送らない保存では変えない');
+ const fr=JSON.parse(records.get(mk).value);fr.plan='free';records.set(mk,{...records.get(mk),value:JSON.stringify(fr)});
+ r=await call(mp,'PUT',{data,revision:4,memo:''},m.editToken);assert.equal(JSON.parse(records.get(mk).value).memo,'搬入 15:00','無料に戻しても消さない（有料に戻せば見られる）');assert.equal((await(await call(mp,'GET',undefined,m.editToken)).json()).memo,undefined);}

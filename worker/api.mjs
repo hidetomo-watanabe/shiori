@@ -94,12 +94,12 @@ async function eventRoute(req,env,id){
   const found=await getRecord(env,'events/'+id);if(!found)return fail(GONE,404);const {record}=found;
   if(expired(record)){await env.BUCKET.delete('events/'+id);return fail(GONE,404)}
   const linked=await slotSetlists(env,id,record),token=bearer(req),isEditor=!!token&&record.editHash===await digest(token);if(!isEditor)await track(req,env,'event_view');
-  return json({data:record.data,revision:record.revision,updatedAt:record.updatedAt,expiresAt:record.expiresAt??null,plan:record.plan==='paid'?'paid':'free',setlists:publicSetlists(linked),...(isEditor?{manage:manageOf(record,linked)}:{})});
+  return json({data:record.data,revision:record.revision,updatedAt:record.updatedAt,expiresAt:record.expiresAt??null,plan:record.plan==='paid'?'paid':'free',setlists:publicSetlists(linked),...(isEditor?{manage:manageOf(record,linked)}:{}),...(isEditor&&record.plan==='paid'?{memo:record.memo||''}:{})});
  }
  if(req.method==='DELETE'&&id){const {error}=await authorize(req,env,id);if(error)return error;await env.BUCKET.delete('events/'+id);await track(req,env,'event_delete');return json({deleted:true})}
  if(!(req.method==='POST'&&!id||req.method==='PUT'&&id))return NOT_FOUND();
  const {error:bodyError,body}=await readJson(req,EVENT_MAX);if(bodyError)return bodyError;
- if(!isObj(body)||!valid(body.data))return INVALID();
+ if(!isObj(body)||!valid(body.data)||body.memo!==undefined&&!str(body.memo,1500))return INVALID();
  const data=cleanEvent(body.data);assignSlotIds(data);const ids=data.acts.map(a=>a.id),now=Date.now();
  if(!id){
   if(await rateLimited(req,env))return RATE_LIMITED();
@@ -109,7 +109,8 @@ async function eventRoute(req,env,id){
  }
  const {error,obj,record}=await authorize(req,env,id);if(error)return error;
  if(body.revision!==record.revision)return STALE();
- const next={...record,...pruneSlots(record,data),data,revision:record.revision+1,updatedAt:new Date(now).toISOString(),expiresAt:computeExpiry(data,record.plan||'free',now)};
+ // 運営向けメモ（有料のみ）：閲覧用の data とは別に持ち、編集キーを持つ人にだけ返す。無料のイベントでは送られても変更しない（free に戻しても消さない）
+ const next={...record,...pruneSlots(record,data),...(record.plan==='paid'&&body.memo!==undefined?{memo:body.memo}:{}),data,revision:record.revision+1,updatedAt:new Date(now).toISOString(),expiresAt:computeExpiry(data,record.plan||'free',now)};
  if(!await putIf(env,'events/'+id,next,obj.etag))return CONFLICT();
  await track(req,env,'event_update');
  return json({id,revision:next.revision,updatedAt:next.updatedAt,expiresAt:next.expiresAt,ids,manage:manageOf(next,await slotSetlists(env,id,next))});
