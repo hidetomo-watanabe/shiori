@@ -58,3 +58,6 @@
 .lookup{display:flex;flex-wrap:wrap;column-gap:16px}.lookup-results{flex-basis:100%}
 .lookup-head{font-size:10px;letter-spacing:1px;font-weight:700;color:#6b7468;margin:8px 0 2px}.lookup-head:first-child{margin-top:2px}.lookup-item.yt img{width:80px;height:45px;object-fit:cover;border-radius:4px;flex:none;background:#e5e9df}.lookup-item.yt div{flex:1}.yt-open{display:inline-block;margin:8px 0 4px;font-size:11px;font-weight:600;color:#121412}
 .lookup-close{display:block;margin:6px 0 0 auto;border:0;background:transparent;color:#6b7468;font-size:11px;font-weight:600;padding:4px 0}
+
+/* 運営管理：プランの切り替えボタン */
+.plan-btn{width:auto;margin:0;padding:3px 10px;border:1px solid #c9ccc2;border-radius:999px;background:transparent;color:#5f6a5c;font-size:12px;font-weight:650}.plan-btn.paid{border-color:#121412;background:#b8f05a;color:#121412}.plan-btn:disabled{opacity:.5}

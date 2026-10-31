@@ -73,7 +73,7 @@ export async function api(req,env,ctx){
  return res;
 }
 async function route(req,env){
- const url=new URL(req.url);if(url.pathname==='/api/admin/list')return adminList(req,env,url);if(url.pathname==='/api/admin/stats')return adminStats(req,env,url);
+ const url=new URL(req.url);if(url.pathname==='/api/admin/list')return adminList(req,env,url);if(url.pathname==='/api/admin/stats')return adminStats(req,env,url);if(url.pathname==='/api/admin/plan')return adminPlan(req,env);
  const isYoutube=url.pathname==='/api/youtube',isInterest=url.pathname==='/api/interest',isAccount=url.pathname==='/api/account',isSetlist=/^\/api\/setlists(\/|$)/.test(url.pathname),match=url.pathname.match(/^\/api\/events(?:\/([a-f0-9]{24})(?:\/slots\/([a-f0-9]{12})\/(connect-key|connect|link))?)?$/);if(!match&&!isSetlist&&!isYoutube&&!isAccount&&!isInterest)return NOT_FOUND();
  if(!env.BUCKET)return fail('保存先の準備ができていません。時間をおいて再度お試しください。',503);
  if(!['GET','POST','PUT','DELETE'].includes(req.method))return fail('対応していない操作です',405);
@@ -251,8 +251,9 @@ async function bump(env,metric){
   if(await env.BUCKET.put(key,JSON.stringify(data),obj?{onlyIf:{etagMatches:obj.etag}}:undefined))return}
 }
 async function track(req,env,metric){const p=bump(env,metric).catch(()=>{}),ctx=ctxs.get(req);if(ctx?.waitUntil)ctx.waitUntil(p);else await p}
-async function adminAuth(req,env){
- if(req.method!=='GET')return fail('対応していない操作です',405);
+async function adminAuth(req,env,method='GET'){
+ if(req.method!==method)return fail('対応していない操作です',405);
+ if(method!=='GET'&&!originAllowed(req,env))return fail('許可されていない操作です',403);
  if(!env.BUCKET)return fail('保存先の準備ができていません。',503);
  const token=req.headers.get('Authorization')?.replace(/^Bearer /,''); // 管理キーは利用者が決める値なので形式を限定しない
  if(!env.ADMIN_TOKEN)return fail('管理画面は設定されていません。',403);
@@ -278,6 +279,20 @@ async function adminList(req,env,url){
   const its=r.data?.items||[];return {...base,songs:its.filter(i=>i.kind==='song').length,items:its.length,videos:(r.data?.videos||[]).length,published:!!r.publication,publishedAt:r.publication?.publishedAt||null,firstPublishedAt:r.firstPublishedAt||null,publishedVersion:r.publishedVersion||0,linked:!!r.link,memberGen:r.memberGen||1};
  }))).filter(Boolean);
  return json({items,cursor:page.truncated?page.cursor:null});
+}
+// 運営管理：イベント・セトリ1件のプラン（free／paid）を切り替える。利用者側からは変えられない（作成時は free、更新でも変わらない）
+// 一覧と同じく完全なIDは扱わず、一覧に出している先頭6文字で指定する。同じ先頭6文字が複数あるときは切り替えない
+// 保存期間はプランに合わせて計算し直す（基準は最終更新日時。いまは free・paid とも同じ値）。編集中の人と衝突しないよう revision・updatedAt は変えない
+async function adminPlan(req,env){
+ const denied=await adminAuth(req,env,'POST');if(denied)return denied;
+ const {error,body}=await readJson(req,{maxBytes:200,maxChars:200});if(error)return error;
+ if(!isObj(body)||!['events','setlists'].includes(body.type)||typeof body.id!=='string'||!/^[a-f0-9]{6}$/.test(body.id)||!['free','paid'].includes(body.plan))return INVALID();
+ const keys=(await env.BUCKET.list({prefix:body.type+'/'+body.id,limit:2})).objects.map(o=>o.key);
+ if(keys.length>1)return fail('同じ先頭6文字のものが複数あるため切り替えられません。',409);
+ const found=keys.length&&await getRecord(env,keys[0]);if(!found||expired(found.record))return fail('見つからないか、保存期間が終わっています。',404);
+ const {record,obj}=found,next={...record,plan:body.plan,expiresAt:computeExpiry(record.data,body.plan,Date.parse(record.updatedAt)||Date.now())};
+ if(!await putIf(env,keys[0],next,obj.etag))return CONFLICT();
+ return json({plan:next.plan,expiresAt:next.expiresAt??null});
 }
 // マイキー（端末間でキーの一覧を同期する。無料。?page=mine から使う）。保存先は accounts/{照合用キーのハッシュ}
 // 一覧は画面側でマイキーから作った鍵で暗号化してから送るため、サーバーは中身（各リンクのキー）を読めない。マイキーそのものも受け取らない（照合用キーはマイキーから導出）
