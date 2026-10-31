@@ -3,10 +3,10 @@ const json=(data,status=200,extra={})=>new Response(JSON.stringify(data),{status
 const random=()=>Array.from(crypto.getRandomValues(new Uint8Array(24)),b=>b.toString(16).padStart(2,'0')).join('');
 async function digest(s){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s))),b=>b.toString(16).padStart(2,'0')).join('')}
 const DAY=864e5;
-// 保存期間（無料・有料共通）：開催日の90日後（開催日未設定なら最終更新から180日後）。いずれの場合も保存から最低30日は保持
+// 保存期間：無料は開催日の90日後（開催日未設定なら最終更新から180日後）。いずれの場合も保存から最低30日は保持。有料（paid）は自動削除なし
 // プランはサーバー側でのみ設定する（クライアントからは変更不可）。プラン別に変える場合は値を差し替える（null は自動削除なし）
 const STANDARD_RETENTION={afterEventDays:90,noDateDays:180,minDays:30};
-export const RETENTION={free:STANDARD_RETENTION,paid:STANDARD_RETENTION};
+export const RETENTION={free:STANDARD_RETENTION,paid:null};
 export const CREATE_LIMIT_PER_HOUR=20;
 export function computeExpiry(data,plan,now){
  const r=Object.hasOwn(RETENTION,plan)?RETENTION[plan]:RETENTION.free;if(!r)return null;
@@ -282,7 +282,7 @@ async function adminList(req,env,url){
 }
 // 運営管理：イベント・セトリ1件のプラン（free／paid）を切り替える。利用者側からは変えられない（作成時は free、更新でも変わらない）
 // 一覧と同じく完全なIDは扱わず、一覧に出している先頭6文字で指定する。同じ先頭6文字が複数あるときは切り替えない
-// 保存期間はプランに合わせて計算し直す（基準は最終更新日時。いまは free・paid とも同じ値）。編集中の人と衝突しないよう revision・updatedAt は変えない
+// 保存期間はプランに合わせて計算し直す（基準は最終更新日時。paid は自動削除なし）。paid から free に戻すときは、すぐ消えないよう今から最低30日は残す。編集中の人と衝突しないよう revision・updatedAt は変えない
 async function adminPlan(req,env){
  const denied=await adminAuth(req,env,'POST');if(denied)return denied;
  const {error,body}=await readJson(req,{maxBytes:200,maxChars:200});if(error)return error;
@@ -290,7 +290,8 @@ async function adminPlan(req,env){
  const keys=(await env.BUCKET.list({prefix:body.type+'/'+body.id,limit:2})).objects.map(o=>o.key);
  if(keys.length>1)return fail('同じ先頭6文字のものが複数あるため切り替えられません。',409);
  const found=keys.length&&await getRecord(env,keys[0]);if(!found||expired(found.record))return fail('見つからないか、保存期間が終わっています。',404);
- const {record,obj}=found,next={...record,plan:body.plan,expiresAt:computeExpiry(record.data,body.plan,Date.parse(record.updatedAt)||Date.now())};
+ const {record,obj}=found,now=Date.now(),exp=computeExpiry(record.data,body.plan,Date.parse(record.updatedAt)||now),floor=now+STANDARD_RETENTION.minDays*DAY;
+ const next={...record,plan:body.plan,expiresAt:exp&&new Date(Math.max(Date.parse(exp),floor)).toISOString()};
  if(!await putIf(env,keys[0],next,obj.etag))return CONFLICT();
  return json({plan:next.plan,expiresAt:next.expiresAt??null});
 }

@@ -27,9 +27,14 @@ for(const b of [{type:'accounts',id,plan:'paid'},{type:'setlists',id:s.id,plan:'
 assert.equal((await plan({type:'events',id,plan:'paid'})).status,404,'種類が違えば見つからない');
 let r=await plan({type:'setlists',id,plan:'paid'});assert.equal(r.status,200);let b=await r.json();
 assert.equal(b.plan,'paid');assert.equal(rec().plan,'paid');assert.equal(rec().revision,before.revision,'revision は変えない');assert.equal(rec().updatedAt,before.updatedAt,'updatedAt は変えない');
-assert.equal(b.expiresAt,before.expiresAt,'いまは paid でも同じ保存期限');assert.equal(records.get(key).customMetadata.expiresAt,before.expiresAt);
+assert.equal(b.expiresAt,null,'paid は自動削除なし');assert.equal(rec().expiresAt,null);assert.equal(records.get(key).customMetadata.expiresAt,'');
+assert.equal((await cleanup(env)).setlists>=0,true);assert.ok(records.has(key),'paid は定期削除で消えない');
 assert.equal((await(await sl('/'+s.id,'PUT',{data:sd,revision:before.revision},s.editToken)).json()).revision,before.revision+1,'切り替え後も編集中の人はそのまま保存できる');assert.equal(rec().plan,'paid','保存してもプランは変わらない');
-r=await plan({type:'setlists',id,plan:'free'});assert.equal((await r.json()).plan,'free');assert.equal(rec().plan,'free');
+r=await plan({type:'setlists',id,plan:'free'});b=await r.json();assert.equal(b.plan,'free');assert.equal(rec().plan,'free');assert.equal(b.expiresAt,before.expiresAt,'free に戻すと元の保存期限');
+// 古いものを free に戻しても、すぐには消さない（今から最低30日）
+{const old=JSON.parse(records.get(key).value);records.set(key,{...records.get(key),value:JSON.stringify({...old,plan:'paid',expiresAt:null,data:{...old.data,date:'2020-01-01'},updatedAt:'2020-01-01T00:00:00.000Z'})});
+ const t=Date.now();b=await(await plan({type:'setlists',id,plan:'free'})).json();assert.ok(Date.parse(b.expiresAt)>=t+29*864e5,'今から最低30日は残す');
+ records.set(key,{...records.get(key),value:JSON.stringify(old)});}
 // 同じ先頭6文字が複数あるときは切り替えない
 const dup='setlists/'+id+'f'.repeat(18);records.set(dup,{value:JSON.stringify({...before}),etag:'d'});assert.equal((await plan({type:'setlists',id,plan:'paid'})).status,409);records.delete(dup);
 // 期限切れは切り替えない

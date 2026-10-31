@@ -40,14 +40,14 @@ const DAY=864e5,now=Date.parse('2026-10-16T05:00:00Z');
 assert.equal(computeExpiry({date:'2026-12-01'},'free',now),new Date(Date.parse('2026-12-01T23:59:59+09:00')+90*DAY).toISOString(),'開催日+90日');
 assert.equal(computeExpiry({date:''},'free',now),new Date(now+180*DAY).toISOString(),'開催日なし→最終更新+180日');
 assert.equal(computeExpiry({date:'2020-01-01'},'free',now),new Date(now+30*DAY).toISOString(),'過去の開催日でも最低30日');
-assert.equal(computeExpiry({date:'2026-12-01'},'paid',now),computeExpiry({date:'2026-12-01'},'free',now),'有料も無料と同じ保存期間');
+assert.equal(computeExpiry({date:'2026-12-01'},'paid',now),null,'有料は自動削除なし');assert.equal(computeExpiry({date:''},'paid',now),null);
 assert.equal(computeExpiry({date:''},'unknown',now),new Date(now+180*DAY).toISOString(),'不明プランは無料扱い');
 r=await call('','POST',{data:{...data,plan:'paid'},plan:'paid'});const e1=await r.json();const k1='events/'+e1.id;
 assert.equal(JSON.parse(records.get(k1).value).plan,'free','クライアントからプランを指定できない');
 const exp1=e1.expiresAt;r=await call('/'+e1.id,'PUT',{data:{...data,date:'2027-03-01'},revision:1},e1.editToken);const u1=await r.json();
 assert.notEqual(u1.expiresAt,exp1);assert.equal(u1.expiresAt,new Date(Date.parse('2027-03-01T23:59:59+09:00')+90*DAY).toISOString(),'開催日変更で期限更新');
 const pr=JSON.parse(records.get(k1).value);pr.plan='paid';records.set(k1,{...records.get(k1),value:JSON.stringify(pr)});
-r=await call('/'+e1.id,'PUT',{data:{...data,date:'2027-03-01'},revision:2},e1.editToken);assert.equal((await r.json()).expiresAt,u1.expiresAt,'有料も開催日の90日後');assert.equal(JSON.parse(records.get(k1).value).plan,'paid','更新でプランは変わらない');
+r=await call('/'+e1.id,'PUT',{data:{...data,date:'2027-03-01'},revision:2},e1.editToken);assert.equal((await r.json()).expiresAt,null,'有料は更新しても自動削除なし');assert.equal(records.get(k1).customMetadata.expiresAt,'','定期削除の対象にしない');assert.equal(JSON.parse(records.get(k1).value).plan,'paid','更新でプランは変わらない');
 assert.equal((await(await call('/'+e1.id)).json()).plan,'paid');assert.equal((await(await call(path0)).json()).plan,'free','既定は無料');
 
 // F-17 削除
