@@ -4,12 +4,27 @@ const page=new URLSearchParams(location.search).get('page');if(!['mine','admin',
 const $=id=>document.getElementById(id),{API,esc,noindex}=shiori;
 // このブラウザで作ったもの（?page=mine）：端末に保存された編集キー・メンバー用キーで一覧を出す。画面からはリンクしない（URLを知っている人向け）
 if(page==='mine'){document.title='このブラウザで作ったもの｜ライブのしおり';noindex();
- const P='live-shiori-v1-';
+ const P='live-shiori-v1-',{store,load,apiCall,copyText,toast,MYKEY,MYBASE,accountAuth,syncKeys}=shiori;
  const day=d=>d?new Date(d+'T12:00:00+09:00').toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'numeric',day:'numeric',weekday:'short'}):'日付未定';
  const at=iso=>iso?new Date(iso).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
- document.querySelector('.intro').outerHTML='<section class="intro"><h1><span>このブラウザで</span><span>作ったもの</span></h1><p>このブラウザで作成した、または編集リンク・メンバー用リンクを開いたイベントとセトリです。<br>別の端末やブラウザで作ったものは表示されません。</p></section>';
- document.querySelector('.workspace').outerHTML='<div class="mine"><p id="mine-status" role="status">読み込み中…</p><div id="mine-body"></div></div>';
+ // マイキーのリンク（#mykey=）で開いたら、この端末に保管してアドレスバーから消す。前回同期した一覧は別のマイキーのものなので捨てる
+ const h=location.hash.match(/^#mykey=([a-f0-9]{48})$/);if(h&&h[1]!==load(MYKEY)){store(MYKEY,h[1]);store(MYBASE,'')}if(location.hash)history.replaceState(null,'',location.pathname+'?page=mine');
+ document.querySelector('.intro').outerHTML='<section class="intro"><h1><span>このブラウザで</span><span>作ったもの</span></h1><p id="mine-lead"></p></section>';
+ document.querySelector('.workspace').outerHTML='<div class="mine"><section class="card mykey" id="mykey"></section><p id="mine-status" role="status">読み込み中…</p><div id="mine-body"></div></div>';
  document.documentElement.classList.remove('loading');
+ // マイキーの欄：未設定なら「作る」「ほかの端末のマイキーを使う」、設定済みなら別の端末で開くリンク
+ const panel=count=>{const my=load(MYKEY);$('mine-lead').innerHTML=my?'このブラウザと、同じマイキーを使っている端末で作成した、または編集リンク・メンバー用リンクを開いたイベントとセトリです。':'このブラウザで作成した、または編集リンク・メンバー用リンクを開いたイベントとセトリです。<br>別の端末やブラウザで作ったものは表示されません。';
+  $('mykey').innerHTML=my?`<h2>マイキー</h2><p class="tip">同じマイキーを使っている端末どうしで、この一覧と編集の権限が揃います${count==null?'':`（${count}件）`}。別の端末では、下のリンクを一度開いてください。</p><input id="mykey-url" readonly value="${esc(location.origin+location.pathname+'?page=mine#mykey='+my)}" aria-label="マイキーのリンク"><button class="secondary" id="mykey-copy">マイキーのリンクをコピー</button><p class="tip">マイキーのリンクを持つ人は、ここにあるすべてのイベント・セトリを編集できます。自分以外には送らないでください。なくすと取り戻せません（各端末にはこれまでどおり残ります）。</p><button class="text-btn" id="mykey-off">この端末でマイキーを使うのをやめる</button>`
+  :`<h2>マイキー</h2><p class="tip">マイキーを作ると、別の端末やブラウザでも同じ一覧が表示され、そのまま編集できます。</p><button class="primary" id="mykey-new">マイキーを作る</button><label>ほかの端末で作ったマイキーを使う<input id="mykey-input" autocomplete="off" placeholder="マイキーのリンクを貼り付け"></label><button class="secondary" id="mykey-use">この端末で使う</button>`};
+ const sync=async()=>{if(!load(MYKEY))return panel();$('mine-status').textContent='同期中…';try{panel(await syncKeys())}catch(e){panel();toast(e.message)}};
+ $('mykey').addEventListener('click',async e=>{const id=e.target.id;
+  if(id==='mykey-copy')copyText($('mykey-url'),'マイキーのリンクをコピーしました。別の端末で開いてください。');
+  if(id==='mykey-off'){if(!confirm('この端末でマイキーを使うのをやめます。\nこの端末の一覧はそのまま残りますが、ほかの端末とは揃わなくなります。やめますか？'))return;store(MYKEY,'');store(MYBASE,'');panel();await list()}
+  if(id==='mykey-new'){store(MYKEY,Array.from(crypto.getRandomValues(new Uint8Array(24)),b=>b.toString(16).padStart(2,'0')).join(''));store(MYBASE,'');await sync();await list()}
+  if(id==='mykey-use'){const m=$('mykey-input').value.trim().match(/^(?:.*#mykey=)?([a-f0-9]{48})$/);if(!m){toast('マイキーのリンクを確認してください。');return}
+   // 打ち間違いで新しいマイキーができないよう、サーバーにあるものだけ受け付ける
+   e.target.disabled=true;try{await apiCall('/api/account',{headers:await accountAuth(m[1])});store(MYKEY,m[1]);store(MYBASE,'');await sync();await list()}catch(e2){toast(e2.status===404?'このマイキーは見つかりません。リンクを確認してください。':e2.message);e.target.disabled=false}}});
+ const list=async()=>{
  const keys=[];try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i),m=k&&k.match(/^live-shiori-v1-(edit|setlist-edit|setlist-member)-([a-f0-9]{24})$/);if(m)keys.push({kind:m[1],id:m[2],key:k,token:localStorage.getItem(k)})}}catch{}
  const editSet=new Set(keys.filter(k=>k.kind==='setlist-edit').map(k=>k.id)),targets=keys.filter(k=>!(k.kind==='setlist-member'&&editSet.has(k.id))).slice(0,90);
  const load=async t=>{const path=t.kind==='edit'?'/api/events/':'/api/setlists/';try{const r=await fetch(API+path+t.id,{cache:'no-store',headers:{Authorization:'Bearer '+t.token}});if(r.status===404)return {...t,gone:true};const b=await r.json();if(!r.ok||!b?.data)return {...t,error:true};return {...t,b}}catch{return {...t,error:true}}};
@@ -21,8 +36,9 @@ if(page==='mine'){document.title='このブラウザで作ったもの｜ライ�
  const setlists=pick('setlist-edit').map(x=>row(x,'?setlist='+x.id,x.b?.data.title||'タイトル未入力',sl(x)));
  const member=pick('setlist-member').map(x=>row(x,'?setlist='+x.id+'&view=member',x.b?.data.title||'タイトル未入力',sl(x)));
  $('mine-body').innerHTML=section('イベント',events,'このブラウザで作ったイベントはありません。')+section('セトリ',setlists,'このブラウザで作ったセトリはありません。')+(member.length?section('メンバーとして見ているセトリ',member,''):'');
- $('mine-status').textContent=targets.length?'':'このブラウザで作ったイベント・セトリはありません。';
- $('mine-body').addEventListener('click',e=>{const k=e.target.dataset.forget;if(!k)return;try{localStorage.removeItem(k)}catch{}e.target.closest('.mine-row').remove()});
+ $('mine-status').textContent=targets.length?'':'このブラウザで作ったイベント・セトリはありません。';};
+ $('mine-body').addEventListener('click',e=>{const k=e.target.dataset.forget;if(!k)return;store(k,'');e.target.closest('.mine-row').remove()});
+ await sync();await list();
  return;}
 // 運営管理（?page=admin）：管理キーでイベント・セトリの状態の一覧を表示する。入力内容・完全なIDはAPIが返さない
 if(page==='admin'){document.title='運営管理｜ライブのしおり';noindex();

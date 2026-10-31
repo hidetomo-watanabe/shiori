@@ -76,11 +76,12 @@ export async function api(req,env,ctx){
 }
 async function route(req,env){
  const url=new URL(req.url);if(url.pathname==='/api/admin/list')return adminList(req,env,url);if(url.pathname==='/api/admin/stats')return adminStats(req,env,url);
- const isYoutube=url.pathname==='/api/youtube',isSetlist=/^\/api\/setlists(\/|$)/.test(url.pathname),match=url.pathname.match(/^\/api\/events(?:\/([a-f0-9]{24})(?:\/slots\/([a-f0-9]{12})\/(connect-key|connect|link))?)?$/);if(!match&&!isSetlist&&!isYoutube)return NOT_FOUND();
+ const isYoutube=url.pathname==='/api/youtube',isAccount=url.pathname==='/api/account',isSetlist=/^\/api\/setlists(\/|$)/.test(url.pathname),match=url.pathname.match(/^\/api\/events(?:\/([a-f0-9]{24})(?:\/slots\/([a-f0-9]{12})\/(connect-key|connect|link))?)?$/);if(!match&&!isSetlist&&!isYoutube&&!isAccount)return NOT_FOUND();
  if(!env.BUCKET)return fail('保存先の準備ができていません。時間をおいて再度お試しください。',503);
  if(!['GET','POST','PUT','DELETE'].includes(req.method))return fail('対応していない操作です',405);
  if(req.method!=='GET'&&!originAllowed(req,env))return fail('許可されていない操作です',403);
  if(isYoutube)return youtubeSearch(req,env,url);
+ if(isAccount)return accountRoute(req,env);
  if(isSetlist)return setlistRoute(req,env,url);
  if(match[2])return slotRoute(req,env,match[1],match[2],match[3]);
  return eventRoute(req,env,match[1]);
@@ -277,6 +278,24 @@ async function adminList(req,env,url){
  }))).filter(Boolean);
  return json({items,cursor:page.truncated?page.cursor:null});
 }
+// マイキー（端末間でキーの一覧を同期する。有料化の対象で、画面からはリンクしない ?page=mine から使う）。保存先は accounts/{照合用キーのハッシュ}
+// 一覧は画面側でマイキーから作った鍵で暗号化してから送るため、サーバーは中身（各リンクのキー）を読めない。マイキーそのものも受け取らない（照合用キーはマイキーから導出）
+// 最終更新から1年使われなければ定期削除の対象にする
+export const ACCOUNT_KEEP_DAYS=365;const ACCOUNT_MAX={maxBytes:60000,maxChars:60000};
+async function accountRoute(req,env){
+ const token=bearer(req);if(!token)return fail('マイキーが必要です',403);
+ const key='accounts/'+(await digest(token)).slice(0,48),found=await getRecord(env,key);
+ if(req.method==='GET'){if(!found||expired(found.record))return fail('マイキーのデータがありません',404);return json({data:found.record.data,revision:found.record.revision})}
+ if(req.method==='DELETE'){await env.BUCKET.delete(key);return json({deleted:true})}
+ if(req.method!=='PUT')return NOT_FOUND();
+ const {error,body}=await readJson(req,ACCOUNT_MAX);if(error)return error;
+ if(!isObj(body)||typeof body.data!=='string'||!/^[A-Za-z0-9+/=]{1,50000}$/.test(body.data)||!Number.isInteger(body.revision))return INVALID();
+ const current=found&&!expired(found.record)?found.record:null;if(body.revision!==(current?.revision||0))return CONFLICT();
+ if(!current&&await rateLimited(req,env,'account'))return RATE_LIMITED();
+ const now=Date.now(),next={data:body.data,revision:body.revision+1,updatedAt:new Date(now).toISOString(),expiresAt:new Date(now+ACCOUNT_KEEP_DAYS*DAY).toISOString()};
+ if(found){if(!await putIf(env,key,next,found.obj.etag))return CONFLICT()}else await putNew(env,key,next);
+ return json({revision:next.revision});
+}
 // YouTube 検索（セトリの「曲を検索」）。APIキー（秘密値 YOUTUBE_API_KEY）は画面に出さない
 // 動画の長さは検索結果に含まれないため、videos.list（1回1単位）で取り足す。取れなくても検索結果は返し、使い回すときに取り直す（durations が付くまで）
 // 無料枠は1日約100回のため、同じ検索語の結果は7日間R2に保管して使い回し、新しい検索はIPごとに1時間30回まで。検索語そのものは保存しない
@@ -301,11 +320,11 @@ async function youtubeSearch(req,env,url){
  await putNew(env,key,{videos,...(durations?{durations}:{}),expiresAt:new Date(Date.now()+YOUTUBE_CACHE_DAYS*DAY).toISOString()});
  return json({videos});
 }
-// 定期実行（Cron Trigger）用：期限切れのイベント・セトリ・YouTube 検索結果、古いレート制限カウンタ、保管期間（約90日）を過ぎた利用計測を削除
+// 定期実行（Cron Trigger）用：期限切れのイベント・セトリ・マイキーの一覧・YouTube 検索結果、古いレート制限カウンタ、保管期間（約90日）を過ぎた利用計測を削除
 export async function cleanup(env){
- const counts={events:0,setlists:0,youtube:0,ratelimit:0,stats:0};if(!env.BUCKET)return counts;
+ const counts={events:0,setlists:0,accounts:0,youtube:0,ratelimit:0,stats:0};if(!env.BUCKET)return counts;
  const now=Date.now(),hour=Math.floor(now/36e5),isExpired=o=>o.customMetadata?.expiresAt&&Date.parse(o.customMetadata.expiresAt)<now;
- for(const [prefix,isDead] of [['events/',isExpired],['setlists/',isExpired],['youtube/',isExpired],['ratelimit/',o=>Number(o.key.split('/')[1])<hour-1],['stats/',o=>o.key.slice(6)<jstDay(now-95*864e5).slice(0,7)]]){
+ for(const [prefix,isDead] of [['events/',isExpired],['setlists/',isExpired],['accounts/',isExpired],['youtube/',isExpired],['ratelimit/',o=>Number(o.key.split('/')[1])<hour-1],['stats/',o=>o.key.slice(6)<jstDay(now-95*864e5).slice(0,7)]]){
   let cursor;do{const page=await env.BUCKET.list({prefix,cursor,include:['customMetadata']});const dead=page.objects.filter(isDead).map(o=>o.key);if(dead.length){await env.BUCKET.delete(dead);counts[prefix.slice(0,-1)]+=dead.length}cursor=page.truncated?page.cursor:undefined}while(cursor);
  }
  return counts;

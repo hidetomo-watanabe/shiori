@@ -12,7 +12,33 @@ const sha=async s=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256
 // API呼び出し：失敗時は利用者向けの文言と status 付きの Error を投げる
 const apiCall=async(path,options={})=>{let r;try{r=await fetch(API+path,{cache:'no-store',...options})}catch{throw Error('通信に失敗しました。電波の良い場所で再度お試しください。')}let body=null;try{body=await r.json()}catch{}if(!r.ok||!body)throw Object.assign(Error(body?.error||(r.status===429?'短時間に作成できる上限に達しました。時間をおいて再度お試しください。':r.status>=500?'サーバーで問題が発生しました。時間をおいて再度お試しください。':'通信に失敗しました（'+r.status+'）。時間をおいて再度お試しください。')),{status:r.status});return body;};
 const noindex=()=>{const m=document.createElement('meta');m.name='robots';m.content='noindex';document.head.append(m);document.querySelector('link[rel=canonical]')?.remove()};
-const store=(k,v)=>{try{if(v)localStorage.setItem(k,v);else localStorage.removeItem(k)}catch{}},load=k=>{try{return localStorage.getItem(k)||''}catch{return ''}};
+// リンクのキーを書き換えたら、マイキーを設定している場合は同期する
+const store=(k,v)=>{try{if(v)localStorage.setItem(k,v);else localStorage.removeItem(k)}catch{}if(LINK_KEY.test(k)&&load(MYKEY))syncKeys().catch(()=>{})},load=k=>{try{return localStorage.getItem(k)||''}catch{return ''}};
+// マイキー（?page=mine で設定。有料化の対象）：このブラウザにあるリンクのキーの一覧を、マイキーから作った鍵で暗号化してサーバーに置き、同じマイキーの端末どうしで揃える
+// 前回同期した一覧（MYBASE）と比べ、このブラウザで変わった分（追加・削除・作り直し）はこちらを、変わっていない分はサーバー側を採る
+const MYKEY='live-shiori-v1-mykey',MYBASE='live-shiori-v1-mykey-base',LINK_KEY=/^live-shiori-v1-(edit|setlist-edit|setlist-member)-[a-f0-9]{24}$/;
+// サーバーには、マイキーそのものではなく照合用の値（マイキーから導出）だけを送る
+const accountAuth=async my=>({Authorization:'Bearer '+(await sha(my+':account')).slice(0,48)});
+const linkKeys=()=>{const o={};try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(LINK_KEY.test(k))o[k]=localStorage.getItem(k)}}catch{}return o};
+const sameKeys=(a,b)=>Object.keys(a).length===Object.keys(b).length&&Object.keys(a).every(k=>a[k]===b[k]);
+const aesKey=async my=>crypto.subtle.importKey('raw',Uint8Array.from((await sha(my+':enc')).match(/../g),h=>parseInt(h,16)),'AES-GCM',false,['encrypt','decrypt']);
+const seal=async(key,o)=>{const iv=crypto.getRandomValues(new Uint8Array(12)),ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(JSON.stringify(o))));return btoa(String.fromCharCode(...iv,...ct))};
+const unseal=async(key,s)=>{try{const b=Uint8Array.from(atob(s),c=>c.charCodeAt(0)),o=JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:b.slice(0,12)},key,b.slice(12))));return Object.fromEntries(Object.entries(isObj(o)?o:{}).filter(([k,v])=>LINK_KEY.test(k)&&/^[a-f0-9]{48}$/.test(v)))}catch{throw Error('マイキーの一覧を読み込めませんでした。')}};
+async function syncOnce(){
+ const my=load(MYKEY);if(!/^[a-f0-9]{48}$/.test(my))return null;
+ const headers=await accountAuth(my),key=await aesKey(my);
+ for(let n=0;n<3;n++){
+  let remote={},revision=0;try{const r=await apiCall('/api/account',{headers});remote=await unseal(key,r.data);revision=r.revision}catch(e){if(e.status!==404)throw e}
+  let base={};try{base=JSON.parse(load(MYBASE))||{}}catch{}
+  const local=linkKeys(),next={};for(const k of new Set([...Object.keys(base),...Object.keys(local),...Object.keys(remote)])){const v=local[k]!==base[k]?local[k]:remote[k];if(v)next[k]=v}
+  if(!revision||!sameKeys(next,remote))try{await apiCall('/api/account',{method:'PUT',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({data:await seal(key,next),revision})})}catch(e){if(e.status===409)continue;throw e}
+  try{for(const k in local)if(!next[k])localStorage.removeItem(k);for(const k in next)localStorage.setItem(k,next[k]);localStorage.setItem(MYBASE,JSON.stringify(next))}catch{}
+  return Object.keys(next).length;
+ }
+ throw Error('同期が混み合っています。時間をおいて再度お試しください。');
+}
+// 同期は1つずつ順に行う。戻り値は同期後のキーの数（マイキー未設定なら null）
+let syncing=Promise.resolve();const syncKeys=()=>syncing=syncing.catch(()=>{}).then(syncOnce);
 // 押したボタンから離れた案内欄だと気づきにくいため、コピー・共有の結果は画面下の通知（トースト）で出す。保存ボタンの下の保存状態の案内は上書きしない
 const toast=msg=>{let t=document.getElementById('toast');if(!t){t=document.createElement('div');t.id='toast';t.setAttribute('aria-live','polite');document.body.append(t)}t.textContent=msg;t.classList.add('show');clearTimeout(t.timer);t.timer=setTimeout(()=>t.classList.remove('show'),4000)};
 // text を渡すと、リンクの代わりにその文面（名前・日時・リンク）をコピーする。コピーできない端末ではリンクの欄を選択する
@@ -29,5 +55,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('.print-btn');if(
 // A4縦1枚（印刷範囲 180×273mm ≒ 680×1032px。端数で2枚目にはみ出さないよう少し余らせる）に収まるよう縮小率を求める（半分より小さくはせず、超える分は次のページへ）。濃い配色は用紙の下まで伸ばす。ブラウザのメニューから印刷した場合も同じ
 window.addEventListener('beforeprint',()=>{const p=document.getElementById('poster'),root=document.documentElement;if(!p)return;p.style.width='680px';const z=Math.max(.5,Math.min(1,1016/p.offsetHeight));p.style.width='';root.style.setProperty('--print-zoom',z);root.style.setProperty('--print-h',Math.floor(1016/z)+'px')});
 window.addEventListener('afterprint',()=>document.documentElement.classList.remove('print-light'));
-return {API,isObj,esc,jst,jpDate,host,normUrl,sha,apiCall,noindex,store,load,toast,copyText,isMobile,lineShare,viewShare};
+// 開いたときにも同期しておく（別の端末で作ったものを取り込む）
+if(load(MYKEY))syncKeys().catch(()=>{});
+return {API,isObj,esc,jst,jpDate,host,normUrl,sha,apiCall,noindex,store,load,toast,copyText,isMobile,lineShare,viewShare,MYKEY,MYBASE,accountAuth,syncKeys};
 })();
