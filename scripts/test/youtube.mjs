@@ -1,14 +1,24 @@
-// YouTube 検索：キー未設定は503、結果の整形（HTMLエスケープ解除・不正IDの除外・動画の長さ）、7日間の使い回し、IPごとの回数制限、期限切れの定期削除
+// YouTube 検索：画面からの呼び出しのみ・セトリの編集キーが必要、キー未設定は503、結果の整形（HTMLエスケープ解除・不正IDの除外・動画の長さ）、
+// 7日間の使い回し、IPごとの1日の回数制限、サービス全体の1日の上限、期限切れの定期削除
 import assert from 'node:assert/strict';
-import {api,cleanup,YOUTUBE_LIMIT_PER_HOUR} from '../../worker/api.mjs';
-import {records,env} from './helpers.mjs';
-const yt=(q,e=env,ip='203.0.113.200',origin)=>api(new Request('https://example.com/api/youtube?'+new URLSearchParams({q}),{headers:{'CF-Connecting-IP':ip,...(origin?{Origin:origin}:{})}}),e);
+import {api,cleanup,YOUTUBE_LIMIT_PER_DAY,YOUTUBE_TOTAL_PER_DAY} from '../../worker/api.mjs';
+import {records,env,sl,sd} from './helpers.mjs';
+const own=await (await sl('','POST',{data:sd},undefined,'203.0.113.199')).json();
+let auth={setlist:own.id,token:own.editToken};
+const yt=(q,e=env,ip='203.0.113.200',origin='https://example.com',a=auth,extra={})=>api(new Request('https://example.com/api/youtube?'+new URLSearchParams({q,...(a.setlist?{setlist:a.setlist}:{})}),{headers:{'CF-Connecting-IP':ip,...(origin?{Origin:origin}:{}),...(a.token?{Authorization:'Bearer '+a.token}:{}),...extra}}),e);
+const resetCounts=()=>{for(const k of [...records.keys()])if(k.startsWith('ratelimit-day/'))records.delete(k)};
 const realFetch=globalThis.fetch;let calls=[],reply={status:200,body:{items:[{id:{videoId:'abcdefghijk'},snippet:{title:'夜明け &amp; 朝 &#39;Live&#39;',channelTitle:'だぁめんず'}},{id:{videoId:'bad'},snippet:{title:'x'}},{id:{channelId:'c'}}]}};
 let details={status:200,body:{items:[{id:'abcdefghijk',contentDetails:{duration:'PT4M5S'}}]}};
 globalThis.fetch=async url=>{url=String(url);if(url.includes('/youtube/v3/videos?'))return new Response(JSON.stringify(details.body),{status:details.status});calls.push(url);return new Response(JSON.stringify(reply.body),{status:reply.status})};
 try{
  const ke={...env,YOUTUBE_API_KEY:'test-key'};
  assert.equal((await yt('夜明け')).status,503,'キー未設定');assert.equal(calls.length,0);
+ assert.equal((await yt('夜明け',ke,undefined,null)).status,403,'Origin なし（curl など）は断る');
+ assert.equal((await yt('夜明け',ke,undefined,null,auth,{'Sec-Fetch-Site':'same-origin'})).status,200,'同一オリジンの画面（Origin が付かない）は通す');calls=[];records.forEach((_,k)=>k.startsWith('youtube/')&&records.delete(k));resetCounts();
+ assert.equal((await yt('夜明け',ke,undefined,undefined,{setlist:own.id})).status,404,'編集キーなし');
+ assert.equal((await yt('夜明け',ke,undefined,undefined,{setlist:own.id,token:own.memberToken})).status,403,'メンバー用キーでは使えない');
+ assert.equal((await yt('夜明け',ke,undefined,undefined,{token:own.editToken})).status,400,'セトリIDなし');
+ assert.equal((await yt('夜明け',ke,undefined,undefined,{setlist:'0'.repeat(24),token:own.editToken})).status,404,'別のセトリのキー');assert.equal(calls.length,0);
  assert.equal((await yt('',ke)).status,400);assert.equal((await yt('x'.repeat(402),ke)).status,400);
  assert.equal((await yt('夜明け',ke,undefined,'https://evil.example')).status,403,'許可されていない画面から');
  let r=await yt('夜明け 原曲さん',ke);assert.equal(r.status,200);assert.deepEqual(await r.json(),{videos:[{id:'abcdefghijk',title:"夜明け & 朝 'Live'",channel:'だぁめんず',sec:245}]});
@@ -19,7 +29,12 @@ try{
  const before=calls.length;details={status:200,body:{items:[{id:'lmnopqrstuv',contentDetails:{duration:'PT1H2M3S'}}]}};r=await yt('長さが取れない',ke);assert.deepEqual((await r.json()).videos[0].sec,3723,'使い回すときに長さを取り直す');assert.equal(calls.length,before,'検索はやり直さない');
  details={status:500,body:{}};r=await yt('長さが取れない',ke);assert.equal((await r.json()).videos[0].sec,3723,'取り直した長さを保存する');
  reply={status:403,body:{}};assert.equal((await yt('上限',ke)).status,503);
- reply={status:200,body:{items:[]}};for(let i=0;i<YOUTUBE_LIMIT_PER_HOUR;i++)assert.equal((await yt('曲'+i,ke,'203.0.113.201')).status,200);
- assert.equal((await yt('もう一曲',ke,'203.0.113.201')).status,429,'IPごとの回数制限');assert.equal((await yt('夜明け 原曲さん',ke,'203.0.113.201')).status,200,'使い回しは制限しない');
+ let n=calls.length;assert.equal((await yt('上限のあと',ke,'203.0.113.210')).status,429,'Google に断られた日はそれ以上呼ばない');assert.equal(calls.length,n);resetCounts();
+ reply={status:200,body:{items:[]}};for(let i=0;i<YOUTUBE_LIMIT_PER_DAY;i++)assert.equal((await yt('曲'+i,ke,'203.0.113.201')).status,200);
+ assert.equal((await yt('もう一曲',ke,'203.0.113.201')).status,429,'IPごとの1日の回数制限');assert.equal((await yt('夜明け 原曲さん',ke,'203.0.113.201')).status,200,'使い回しは制限しない');
+ resetCounts();n=calls.length;for(let i=0;i<YOUTUBE_TOTAL_PER_DAY;i++)assert.equal((await yt('全体'+i,ke,'198.51.100.'+Math.floor(i/YOUTUBE_LIMIT_PER_DAY))).status,200);
+ r=await yt('全体の上限',ke,'198.51.100.99');assert.equal(r.status,429,'サービス全体の1日の上限');assert.match((await r.json()).error,/YouTube で検索結果を開く/);assert.equal(calls.length,n+YOUTUBE_TOTAL_PER_DAY);
+ const today=[...records.keys()].filter(k=>k.startsWith('ratelimit-day/')),old='ratelimit-day/2020-01-01/youtube-all';assert.ok(today.length>0);records.set(old,{value:'1',etag:'y'});
  records.set(cached[0],{value:'{}',etag:'x',customMetadata:{expiresAt:'2020-01-01T00:00:00.000Z'}});assert.ok((await cleanup(env)).youtube>=1);assert.ok(!records.has(cached[0]));
+ assert.ok(!records.has(old),'古い日の回数は消す');assert.ok(today.every(k=>records.has(k)),'今日の回数は残す');
 }finally{globalThis.fetch=realFetch}

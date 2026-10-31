@@ -130,7 +130,9 @@ function songFromVideo(title,channel,artist){const q=/[「『]([^」』]+)[」�
  return {title:cut(song),artist:cut(parts.find(x=>x!==song))};}
 const ytSec=v=>Number.isInteger(v.sec)&&v.sec>0&&v.sec<=14400?v.sec:0;
 async function youtube(n,term){const open=`<a class="yt-open" href="${esc('https://www.youtube.com/results?'+new URLSearchParams({search_query:term}))}" target="_blank" rel="noopener noreferrer">YouTube で検索結果を開く ↗</a>`;let videos;
- try{videos=(await apiCall('/api/youtube?'+new URLSearchParams({q:term}))).videos}catch(e){return `<div class="lookup-head">YouTube</div><p class="tip">${esc(e.message)}</p>${open}`}
+ // 候補の表示はセトリの編集キーが要る（YouTube の1日の枠を外から使い切られないため）。保存前はキーがないので案内だけ出す
+ if(!/^[a-f0-9]{24}$/.test(id)||!token)return `<div class="lookup-head">YouTube</div><p class="tip">一度保存すると、ここに YouTube の候補も出ます。</p>${open}`;
+ try{videos=(await apiCall('/api/youtube?'+new URLSearchParams({q:term,setlist:id}),{headers:{Authorization:'Bearer '+token}})).videos}catch(e){return `<div class="lookup-head">YouTube</div><p class="tip">${esc(e.message)}</p>${open}`}
  const found=(Array.isArray(videos)?videos:[]).filter(v=>isObj(v)&&/^[\w-]{11}$/.test(v.id));
  if(!found.length)return `<div class="lookup-head">YouTube</div><p class="tip">見つかりませんでした。</p>${open}`;
  return '<div class="lookup-head">YouTube</div>'+found.map(v=>`<div class="lookup-item yt"><img src="https://i.ytimg.com/vi/${v.id}/mqdefault.jpg" alt="" loading="lazy" referrerpolicy="no-referrer"><div><b>${esc(v.title||'')}</b><span>${esc(v.channel||'')}${ytSec(v)?` · ${fmt(ytSec(v))}`:''}</span></div><button class="secondary" data-op="pick" data-i="${n}" data-url="https://www.youtube.com/watch?v=${v.id}" data-sec="${ytSec(v)}" ${(({title,artist})=>`data-title="${esc(title)}" data-artist="${esc(artist)}"`)(songFromVideo(String(v.title||''),String(v.channel||''),state.items[n].artist||''))} aria-label="${esc(v.title||'')}を選ぶ（曲名・原曲アーティスト・時間・参考URLに入れる）">これにする</button></div>`).join('')+open;}

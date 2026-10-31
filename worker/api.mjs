@@ -24,13 +24,11 @@ async function salt(env){
  return saltCache=await o.text();
 }
 // R2のみで動く簡易レート制限（IPは秘密値付きでハッシュ化、1時間単位のバケット）。kind ごとに別に数える
-async function rateLimited(req,env,kind='',limit=CREATE_LIMIT_PER_HOUR){
- const ip=req.headers.get('CF-Connecting-IP')||req.headers.get('X-Forwarded-For')?.split(',')[0].trim()||'unknown';
- const hour=Math.floor(Date.now()/36e5),key='ratelimit/'+hour+'/'+(kind&&kind+'-')+(await digest((await salt(env))+':'+ip)).slice(0,32);
- const obj=await env.BUCKET.get(key),count=obj?Number(await obj.text())||0:0;
- if(count>=limit)return true;
- await env.BUCKET.put(key,String(count+1));return false;
-}
+const ipHash=async(req,env)=>{const ip=req.headers.get('CF-Connecting-IP')||req.headers.get('X-Forwarded-For')?.split(',')[0].trim()||'unknown';return (await digest((await salt(env))+':'+ip)).slice(0,32)};
+// 回数を数え、上限に達していれば true。読んでから書くため同時アクセスでは数え漏れ得る（概数でよい用途に限る）
+const readCount=async(env,key)=>{const obj=await env.BUCKET.get(key);return obj?Number(await obj.text())||0:0};
+async function counted(env,key,limit){const count=await readCount(env,key);if(count>=limit)return true;await env.BUCKET.put(key,String(count+1));return false}
+async function rateLimited(req,env,kind='',limit=CREATE_LIMIT_PER_HOUR){return counted(env,'ratelimit/'+Math.floor(Date.now()/36e5)+'/'+(kind&&kind+'-')+await ipHash(req,env),limit)}
 // 共通の応答
 const fail=(message,status,extra)=>json({error:message},status,extra);
 const NOT_FOUND=()=>fail('ページが見つかりません',404),INVALID=()=>fail('入力内容を確認してください',400),CONFLICT=()=>fail('同時に更新されました。ページを再読み込みしてください。',409);
@@ -242,7 +240,7 @@ async function slotRoute(req,env,id,slotId,action){
 }
 // 利用計測：操作の種類ごとの延べ回数を、日本時間の日別に stats/YYYY-MM（月ごとに1オブジェクト）へ記録する
 // 誰が・どこから・何を、は記録しない。同時更新はetag条件付きで数回やり直すが、取りこぼし得るため概数として扱う。計測の失敗で本来の処理を止めない
-export const METRICS=['event_view','public_view','member_view','event_create','event_update','event_delete','setlist_create','setlist_update','setlist_delete','publish_first','republish','publish_update','unpublish','link','unlink','error'];
+export const METRICS=['event_view','public_view','member_view','event_create','event_update','event_delete','setlist_create','setlist_update','setlist_delete','publish_first','republish','publish_update','unpublish','link','unlink','youtube_search','youtube_cache','error'];
 const jstDay=(t=Date.now())=>new Date(t+9*36e5).toISOString().slice(0,10);
 async function bump(env,metric){
  if(!env.BUCKET)return;const day=jstDay(),key='stats/'+day.slice(0,7);
@@ -300,8 +298,16 @@ async function accountRoute(req,env){
 }
 // YouTube 検索（セトリの「曲を検索」）。APIキー（秘密値 YOUTUBE_API_KEY）は画面に出さない
 // 動画の長さは検索結果に含まれないため、videos.list（1回1単位）で取り足す。取れなくても検索結果は返し、使い回すときに取り直す（durations が付くまで）
-// 無料枠は1日約100回のため、同じ検索語の結果は7日間R2に保管して使い回し、新しい検索はIPごとに1時間30回まで。検索語そのものは保存しない
-export const YOUTUBE_LIMIT_PER_HOUR=30;const YOUTUBE_CACHE_DAYS=7;
+// 無料枠は1日約100回（検索1回100単位／1万単位）のため、外から使い切られないよう次の順で絞る。検索語そのものは保存しない
+//  1. ブラウザの画面からの呼び出しに限る（Origin が許可されたドメイン、または同一オリジン）
+//  2. セトリの編集キーを持つ人だけ（?setlist={id} と Authorization。検索はセトリの編集画面でしか使わない）
+//  3. 同じ検索語の結果は7日間R2に保管して使い回す（使い回しは枠を使わないので回数に数えない）
+//  4. 新しい検索はIPごとに1日20回、サービス全体で1日90回まで。超えたら画面は「YouTube で開く」と iTunes の候補だけを出す
+// 「1日」は YouTube の枠が戻る太平洋時間の0時（日本時間の16時か17時）で区切る
+export const YOUTUBE_LIMIT_PER_DAY=20,YOUTUBE_TOTAL_PER_DAY=90;const YOUTUBE_CACHE_DAYS=7;
+const ptDay=(t=Date.now())=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Los_Angeles',year:'numeric',month:'2-digit',day:'2-digit'}).format(t);
+const fromBrowser=(req,env)=>{const o=req.headers.get('Origin');return o?o===new URL(req.url).origin||allowedOrigins(env).includes(o):req.headers.get('Sec-Fetch-Site')==='same-origin'};
+const YOUTUBE_DONE=()=>fail('今日の YouTube の候補表示は終了しました。「YouTube で検索結果を開く」から探せます。',429,{'Retry-After':'3600'});
 const isoSeconds=s=>{const m=/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(s||'');return m?(+m[1]||0)*3600+(+m[2]||0)*60+(+m[3]||0):0};
 async function addDurations(env,videos){if(!videos.length)return true;
  try{const d=await fetch('https://www.googleapis.com/youtube/v3/videos?'+new URLSearchParams({part:'contentDetails',id:videos.map(v=>v.id).join(','),key:env.YOUTUBE_API_KEY}));if(!d.ok)return false;
@@ -309,25 +315,31 @@ async function addDurations(env,videos){if(!videos.length)return true;
 const unescapeHtml=s=>String(s||'').replace(/&(amp|lt|gt|quot|#39|#x27);/g,(_,e)=>({amp:'&',lt:'<',gt:'>',quot:'"','#39':"'",'#x27':"'"}[e]));
 async function youtubeSearch(req,env,url){
  if(req.method!=='GET')return fail('対応していない操作です',405);
- if(!originAllowed(req,env))return fail('許可されていない操作です',403);
- const q=(url.searchParams.get('q')||'').trim();if(!q||q.length>401)return INVALID();
+ if(!fromBrowser(req,env))return fail('許可されていない操作です',403);
+ const q=(url.searchParams.get('q')||'').trim(),setlistId=url.searchParams.get('setlist')||'';if(!q||q.length>401||!/^[a-f0-9]{24}$/.test(setlistId))return INVALID();
+ const {error}=await setlistAuth(req,env,setlistId,['edit']);if(error)return error;
  if(!env.YOUTUBE_API_KEY)return fail('YouTube の検索は準備中です。',503);
  const key='youtube/'+(await digest(q.toLowerCase())).slice(0,32),cached=await getRecord(env,key);
- if(cached&&!expired(cached.record)){const {record}=cached;if(!record.durations&&Array.isArray(record.videos)&&await addDurations(env,record.videos))await putNew(env,key,{...record,durations:true}).catch(()=>{});return json({videos:record.videos})}
- if(await rateLimited(req,env,'youtube',YOUTUBE_LIMIT_PER_HOUR))return fail('YouTube の検索回数の上限に達しました。1時間ほどおいて再度お試しください。',429,{'Retry-After':'3600'});
+ if(cached&&!expired(cached.record)){const {record}=cached;if(!record.durations&&Array.isArray(record.videos)&&await addDurations(env,record.videos))await putNew(env,key,{...record,durations:true}).catch(()=>{});await track(req,env,'youtube_cache');return json({videos:record.videos})}
+ const day=ptDay(),totalKey='ratelimit-day/'+day+'/youtube-all';
+ if(await readCount(env,totalKey)>=YOUTUBE_TOTAL_PER_DAY)return YOUTUBE_DONE();
+ if(await counted(env,'ratelimit-day/'+day+'/youtube-'+await ipHash(req,env),YOUTUBE_LIMIT_PER_DAY))return fail('今日の YouTube の候補表示の回数を使い切りました。「YouTube で検索結果を開く」から探せます。',429,{'Retry-After':'3600'});
+ if(await counted(env,totalKey,YOUTUBE_TOTAL_PER_DAY))return YOUTUBE_DONE();
  const r=await fetch('https://www.googleapis.com/youtube/v3/search?'+new URLSearchParams({part:'snippet',type:'video',maxResults:'5',regionCode:'JP',relevanceLanguage:'ja',safeSearch:'moderate',q,key:env.YOUTUBE_API_KEY}));
+ if(r.status===403)await env.BUCKET.put(totalKey,String(YOUTUBE_TOTAL_PER_DAY)); // 枠を使い切った（または他の理由で拒否された）ので、その日は呼ばない
  if(!r.ok)return fail(r.status===403?'今日の YouTube 検索の上限に達しました。明日以降に再度お試しください。':'YouTube を検索できませんでした。時間をおいて再度お試しください。',503);
  const body=await r.json(),videos=(Array.isArray(body?.items)?body.items:[]).filter(x=>/^[\w-]{11}$/.test(x?.id?.videoId||'')).map(x=>({id:x.id.videoId,title:unescapeHtml(x.snippet?.title).slice(0,200),channel:unescapeHtml(x.snippet?.channelTitle).slice(0,100)}));
  const durations=await addDurations(env,videos);
  await putNew(env,key,{videos,...(durations?{durations}:{}),expiresAt:new Date(Date.now()+YOUTUBE_CACHE_DAYS*DAY).toISOString()});
+ await track(req,env,'youtube_search');
  return json({videos});
 }
 // 定期実行（Cron Trigger）用：期限切れのイベント・セトリ・マイキーの一覧・YouTube 検索結果、古いレート制限カウンタ、保管期間（約90日）を過ぎた利用計測を削除
 export async function cleanup(env){
  const counts={events:0,setlists:0,accounts:0,youtube:0,ratelimit:0,stats:0};if(!env.BUCKET)return counts;
  const now=Date.now(),hour=Math.floor(now/36e5),isExpired=o=>o.customMetadata?.expiresAt&&Date.parse(o.customMetadata.expiresAt)<now;
- for(const [prefix,isDead] of [['events/',isExpired],['setlists/',isExpired],['accounts/',isExpired],['youtube/',isExpired],['ratelimit/',o=>Number(o.key.split('/')[1])<hour-1],['stats/',o=>o.key.slice(6)<jstDay(now-95*864e5).slice(0,7)]]){
-  let cursor;do{const page=await env.BUCKET.list({prefix,cursor,include:['customMetadata']});const dead=page.objects.filter(isDead).map(o=>o.key);if(dead.length){await env.BUCKET.delete(dead);counts[prefix.slice(0,-1)]+=dead.length}cursor=page.truncated?page.cursor:undefined}while(cursor);
+ for(const [prefix,isDead] of [['events/',isExpired],['setlists/',isExpired],['accounts/',isExpired],['youtube/',isExpired],['ratelimit/',o=>Number(o.key.split('/')[1])<hour-1],['ratelimit-day/',o=>o.key.split('/')[1]<ptDay(now-2*DAY)],['stats/',o=>o.key.slice(6)<jstDay(now-95*864e5).slice(0,7)]]){
+  let cursor;do{const page=await env.BUCKET.list({prefix,cursor,include:['customMetadata']});const dead=page.objects.filter(isDead).map(o=>o.key);if(dead.length){await env.BUCKET.delete(dead);counts[prefix.split(/[-/]/)[0]]+=dead.length}cursor=page.truncated?page.cursor:undefined}while(cursor);
  }
  return counts;
 }
