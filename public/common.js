@@ -12,13 +12,14 @@ const sha=async s=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256
 // API呼び出し：失敗時は利用者向けの文言と status 付きの Error を投げる
 const apiCall=async(path,options={})=>{let r;try{r=await fetch(API+path,{cache:'no-store',...options})}catch{throw Error('通信に失敗しました。電波の良い場所で再度お試しください。')}let body=null;try{body=await r.json()}catch{}if(!r.ok||!body)throw Object.assign(Error(body?.error||(r.status===429?'短時間に作成できる上限に達しました。時間をおいて再度お試しください。':r.status>=500?'サーバーで問題が発生しました。時間をおいて再度お試しください。':'通信に失敗しました（'+r.status+'）。時間をおいて再度お試しください。')),{status:r.status});return body;};
 const noindex=()=>{const m=document.createElement('meta');m.name='robots';m.content='noindex';document.head.append(m);document.querySelector('link[rel=canonical]')?.remove()};
-// リンクのキーを書き換えたら、マイキーを設定している場合は同期する
-const store=(k,v)=>{try{if(v)localStorage.setItem(k,v);else localStorage.removeItem(k)}catch{}if(LINK_KEY.test(k)&&load(MYKEY))syncKeys().catch(()=>{})},load=k=>{try{return localStorage.getItem(k)||''}catch{return ''}};
+// リンクのキーが変わったら、マイキーを設定している場合は同期する（同じ値の書き直しでは同期しない）
+const store=(k,v)=>{const changed=(v||'')!==load(k);try{if(v)localStorage.setItem(k,v);else localStorage.removeItem(k)}catch{}if(changed&&LINK_KEY.test(k)&&load(MYKEY))syncKeys().catch(()=>{})},load=k=>{try{return localStorage.getItem(k)||''}catch{return ''}};
 // マイキー（?page=mine で設定。有料化の対象）：このブラウザにあるリンクのキーの一覧を、マイキーから作った鍵で暗号化してサーバーに置き、同じマイキーの端末どうしで揃える
 // 前回同期した一覧（MYBASE）と比べ、このブラウザで変わった分（追加・削除・作り直し）はこちらを、変わっていない分はサーバー側を採る
 const MYKEY='live-shiori-v1-mykey',MYBASE='live-shiori-v1-mykey-base',LINK_KEY=/^live-shiori-v1-(edit|setlist-edit|setlist-member)-[a-f0-9]{24}$/;
 // サーバーには、マイキーそのものではなく照合用の値（マイキーから導出）だけを送る
 const accountAuth=async my=>({Authorization:'Bearer '+(await sha(my+':account')).slice(0,48)});
+// このブラウザにあるリンクのキー：{保存名: キー}。保存名から種類（edit=イベント編集／setlist-edit／setlist-member）とIDを読み取れる
 const linkKeys=()=>{const o={};try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(LINK_KEY.test(k))o[k]=localStorage.getItem(k)}}catch{}return o};
 const sameKeys=(a,b)=>Object.keys(a).length===Object.keys(b).length&&Object.keys(a).every(k=>a[k]===b[k]);
 const aesKey=async my=>crypto.subtle.importKey('raw',Uint8Array.from((await sha(my+':enc')).match(/../g),h=>parseInt(h,16)),'AES-GCM',false,['encrypt','decrypt']);
@@ -37,8 +38,8 @@ async function syncOnce(){
  }
  throw Error('同期が混み合っています。時間をおいて再度お試しください。');
 }
-// 同期は1つずつ順に行う。戻り値は同期後のキーの数（マイキー未設定なら null）
-let syncing=Promise.resolve();const syncKeys=()=>syncing=syncing.catch(()=>{}).then(syncOnce);
+// 同期は1つずつ順に行う。まだ始まっていない同期があればそれにまとめる（削除で複数のキーを続けて消すときなど）。戻り値は同期後のキーの数（マイキー未設定なら null）
+let syncing=Promise.resolve(),queued=null;const syncKeys=()=>queued||(queued=syncing=syncing.catch(()=>{}).then(()=>{queued=null;return syncOnce()}));
 // 押したボタンから離れた案内欄だと気づきにくいため、コピー・共有の結果は画面下の通知（トースト）で出す。保存ボタンの下の保存状態の案内は上書きしない
 const toast=msg=>{let t=document.getElementById('toast');if(!t){t=document.createElement('div');t.id='toast';t.setAttribute('aria-live','polite');document.body.append(t)}t.textContent=msg;t.classList.add('show');clearTimeout(t.timer);t.timer=setTimeout(()=>t.classList.remove('show'),4000)};
 // text を渡すと、リンクの代わりにその文面（名前・日時・リンク）をコピーする。コピーできない端末ではリンクの欄を選択する
@@ -55,7 +56,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('.print-btn');if(
 // A4縦1枚（印刷範囲 180×273mm ≒ 680×1032px。端数で2枚目にはみ出さないよう少し余らせる）に収まるよう縮小率を求める（半分より小さくはせず、超える分は次のページへ）。濃い配色は用紙の下まで伸ばす。ブラウザのメニューから印刷した場合も同じ
 window.addEventListener('beforeprint',()=>{const p=document.getElementById('poster'),root=document.documentElement;if(!p)return;p.style.width='680px';const z=Math.max(.5,Math.min(1,1016/p.offsetHeight));p.style.width='';root.style.setProperty('--print-zoom',z);root.style.setProperty('--print-h',Math.floor(1016/z)+'px')});
 window.addEventListener('afterprint',()=>document.documentElement.classList.remove('print-light'));
-// 開いたときにも同期しておく（別の端末で作ったものを取り込む）
-if(load(MYKEY))syncKeys().catch(()=>{});
-return {API,isObj,esc,jst,jpDate,host,normUrl,sha,apiCall,noindex,store,load,toast,copyText,isMobile,lineShare,viewShare,MYKEY,MYBASE,accountAuth,syncKeys};
+// 開いたときにも同期しておく（別の端末で作ったものを取り込む）。?page=mine は一覧を出す前に自分で同期する
+if(load(MYKEY)&&new URLSearchParams(location.search).get('page')!=='mine')syncKeys().catch(()=>{});
+return {API,isObj,esc,jst,jpDate,host,normUrl,sha,apiCall,noindex,store,load,toast,copyText,isMobile,lineShare,viewShare,MYKEY,MYBASE,accountAuth,linkKeys,syncKeys};
 })();

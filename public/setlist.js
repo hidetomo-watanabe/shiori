@@ -1,7 +1,7 @@
 // セトリ画面：?setlist=new（作成）／?setlist={id}#edit=…（編集）／?setlist={id}#member=…（メンバー閲覧）／?setlist={id}（公開。キーを持つ端末では &view=1 で公開セトリ）／?setlist=connect&event=…&slot=…#connect=…（出演枠への紐づけ）。それ以外のURLでは何もしない
 (async()=>{
 const params=new URLSearchParams(location.search);let id=params.get('setlist');if(id===null)return;
-const {API,isObj,esc,jst,jpDate,host,normUrl,sha,apiCall,noindex,store,load,toast,copyText,lineShare,viewShare}=shiori;
+const {API,isObj,esc,jst,jpDate,host,normUrl,sha,apiCall,noindex,store,load,linkKeys,toast,copyText,lineShare,viewShare}=shiori;
 const $=id=>document.getElementById(id),KEY='live-shiori-v1',main=document.querySelector('main'),ready=()=>document.documentElement.classList.remove('loading');
 noindex();
 document.title='セトリ｜ライブのしおり';
@@ -55,7 +55,7 @@ if(isConnect){
  if(info.taken){$('c-open').hidden=true;$('c-taken').hidden=false;if(info.setlistId&&load(tokenKey('edit',info.setlistId))){const a=document.createElement('a');a.href=location.pathname+'?setlist='+info.setlistId;a.textContent='紐づいているセトリを開く →';$('c-taken').append(document.createElement('br'),a)}return;}
  const target={eventId,slotId,connectToken};
  $('c-new').onclick=()=>{store(pendingKey,JSON.stringify({...target,backLink:$('c-back').checked,event:ev,slot:info.slot}));location.href=location.pathname+'?setlist=new'};
- const mine=[];try{for(let i=0;i<localStorage.length;i++){const m=localStorage.key(i)?.match(/^live-shiori-v1-setlist-edit-([a-f0-9]{24})$/);if(m)mine.push({sid:m[1],tok:localStorage.getItem(m[0])})}}catch{}
+ const mine=Object.entries(linkKeys()).map(([k,tok])=>({sid:k.match(/^live-shiori-v1-setlist-edit-([a-f0-9]{24})$/)?.[1],tok})).filter(x=>x.sid);
  const found=(await Promise.all(mine.slice(0,30).map(async f=>{try{const r=await apiCall('/api/setlists/'+f.sid,{headers:{Authorization:'Bearer '+f.tok}});return r.role==='edit'&&validate(r.data)?{...f,r}:null}catch{return null}}))).filter(Boolean).sort((a,b)=>String(b.r.updatedAt).localeCompare(String(a.r.updatedAt)));
  $('c-list').innerHTML=found.length?found.map((f,n)=>`<div class="slot-row"><div><b>${esc(f.r.data.title||'タイトル未入力')}</b><span class="badge">${f.r.link?.valid?'別の出演枠に紐づけ済み':'未紐づけ'}${f.r.publication?.published?'・公開中':''}</span></div><div class="slot-actions"><button class="primary" data-n="${n}" ${f.r.link?.valid?'disabled':''}>これを紐づける</button></div></div>`).join(''):'<p class="tip">このブラウザで作ったセトリはありません。別の端末で作った場合は、そのセトリの編集リンクをこのブラウザで一度開いてから、紐づけ用リンクを開き直してください。</p>';
  // 作成済みのセトリがあれば一覧を先に出して主要な操作にし、新規作成は補助的に。なければ新規作成を主要な操作にする

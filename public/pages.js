@@ -4,7 +4,7 @@ const page=new URLSearchParams(location.search).get('page');if(!['mine','admin',
 const $=id=>document.getElementById(id),{API,esc,noindex}=shiori;
 // このブラウザで作ったもの（?page=mine）：端末に保存された編集キー・メンバー用キーで一覧を出す。画面からはリンクしない（URLを知っている人向け）
 if(page==='mine'){document.title='このブラウザで作ったもの｜ライブのしおり';noindex();
- const P='live-shiori-v1-',{store,load,apiCall,copyText,toast,MYKEY,MYBASE,accountAuth,syncKeys}=shiori;
+ const P='live-shiori-v1-',{store,load,apiCall,copyText,toast,MYKEY,MYBASE,accountAuth,linkKeys,syncKeys}=shiori;
  const day=d=>d?new Date(d+'T12:00:00+09:00').toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'numeric',day:'numeric',weekday:'short'}):'日付未定';
  const at=iso=>iso?new Date(iso).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
  // マイキーのリンク（#mykey=）で開いたら、この端末に保管してアドレスバーから消す。前回同期した一覧は別のマイキーのものなので捨てる
@@ -25,7 +25,7 @@ if(page==='mine'){document.title='このブラウザで作ったもの｜ライ�
    // 打ち間違いで新しいマイキーができないよう、サーバーにあるものだけ受け付ける
    e.target.disabled=true;try{await apiCall('/api/account',{headers:await accountAuth(m[1])});store(MYKEY,m[1]);store(MYBASE,'');await sync();await list()}catch(e2){toast(e2.status===404?'このマイキーは見つかりません。リンクを確認してください。':e2.message);e.target.disabled=false}}});
  const list=async()=>{
- const keys=[];try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i),m=k&&k.match(/^live-shiori-v1-(edit|setlist-edit|setlist-member)-([a-f0-9]{24})$/);if(m)keys.push({kind:m[1],id:m[2],key:k,token:localStorage.getItem(k)})}}catch{}
+ const keys=Object.entries(linkKeys()).map(([key,token])=>{const [,kind,id]=key.match(/^live-shiori-v1-(.+)-([a-f0-9]{24})$/);return {kind,id,key,token}});
  const editSet=new Set(keys.filter(k=>k.kind==='setlist-edit').map(k=>k.id)),targets=keys.filter(k=>!(k.kind==='setlist-member'&&editSet.has(k.id))).slice(0,90);
  const fetchOne=async t=>{const path=t.kind==='edit'?'/api/events/':'/api/setlists/';try{const r=await fetch(API+path+t.id,{cache:'no-store',headers:{Authorization:'Bearer '+t.token}});if(r.status===404)return {...t,gone:true};const b=await r.json();if(!r.ok||!b?.data)return {...t,error:true};return {...t,b}}catch{return {...t,error:true}}};
  const all=await Promise.all(targets.map(fetchOne)),pick=kind=>all.filter(x=>x.kind===kind).sort((a,b)=>String(b.b?.updatedAt||'').localeCompare(String(a.b?.updatedAt||'')));
