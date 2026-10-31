@@ -1,15 +1,15 @@
-// イベント・セトリ以外のページ：?page=mine（このブラウザで作ったもの）／admin（運営管理）／privacy（プライバシー）
+// イベント・セトリ以外のページ：?page=mine（作ったもの・マイキー）／admin（運営管理）／privacy（プライバシー）
 (async()=>{
 const page=new URLSearchParams(location.search).get('page');if(!['mine','admin','privacy'].includes(page))return;
 const $=id=>document.getElementById(id),{API,esc,noindex}=shiori;
-// このブラウザで作ったもの（?page=mine）：端末に保存された編集キー・メンバー用キーで一覧を出す。画面からはリンクしない（URLを知っている人向け）
-if(page==='mine'){document.title='このブラウザで作ったもの｜ライブのしおり';noindex();
+// 作ったもの・マイキー（?page=mine）：端末に保存された編集キー・メンバー用キーで一覧を出す。マイキーで別の端末と揃えられる。フッターからリンク
+if(page==='mine'){document.title='作ったもの・マイキー｜ライブのしおり';noindex();
  const P='live-shiori-v1-',{store,load,apiCall,copyText,toast,MYKEY,MYBASE,accountAuth,linkKeys,syncKeys,forgetMyKey}=shiori;
  const day=d=>d?new Date(d+'T12:00:00+09:00').toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'numeric',day:'numeric',weekday:'short'}):'日付未定';
  const at=iso=>iso?new Date(iso).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
  // マイキーのリンク（#mykey=）で開いたら、この端末に保管してアドレスバーから消す。前回同期した一覧は別のマイキーのものなので捨てる
  const h=location.hash.match(/^#mykey=([a-f0-9]{48})$/);if(h&&h[1]!==load(MYKEY)){store(MYKEY,h[1]);store(MYBASE,'')}if(location.hash)history.replaceState(null,'',location.pathname+'?page=mine');
- document.querySelector('.intro').outerHTML='<section class="intro"><h1><span>このブラウザで</span><span>作ったもの</span></h1><p id="mine-lead"></p></section>';
+ document.querySelector('.intro').outerHTML='<section class="intro"><h1><span>作ったもの</span></h1><p id="mine-lead"></p></section>';
  document.querySelector('.workspace').outerHTML='<div class="mine"><section class="card mykey" id="mykey"></section><p id="mine-status" role="status">読み込み中…</p><div id="mine-body"></div></div>';
  document.documentElement.classList.remove('loading');
  // マイキーの欄：未設定なら「作る」「ほかの端末のマイキーを使う」、設定済みなら別の端末で開くリンク
@@ -74,7 +74,7 @@ if(page==='privacy'){document.title='プライバシーについて｜ライブ�
 <h2>アカウントはありません</h2><p>登録やログインはなく、氏名・メールアドレス・電話番号などはお預かりしません。イベントやセトリは、作成時に発行される秘密のリンク（閲覧・編集・メンバー用・紐づけ用・公開セトリ）で見たり編集したりします。</p><p>別の端末やブラウザでも同じように編集したい場合は、マイキーを使えます（任意）。マイキーも秘密のリンクの一つで、個人情報の入力は不要です。</p>
 <h2>保存する情報</h2><ul><li>イベント・セトリに入力された内容（イベント名、出演者名、曲名、メモ、コメント、動画リンクなど）</li><li>作成・更新日時、保存期限、公開状態、イベントとセトリの紐づけ</li><li>リンクの照合用データ（秘密のリンクそのものではなく、元に戻せない形に変換した値）</li><li>マイキーを使う場合：同期する編集リンク・メンバー用リンクの一覧と更新日時。一覧は、お使いの端末でマイキーから作った鍵で暗号化してから送るため、運営者を含めサーバー側では中身を読めません。マイキーそのものも送りません。</li></ul><p>入力欄には個人情報を書かないでください。</p>
 <h2>見られる人</h2><ul><li>イベントの閲覧リンクを知っている人は、誰でもイベントの内容を見られます。</li><li>公開前のセトリは、メンバー用リンクまたは編集リンクを知っている人だけが見られます。主催者を含め、イベント側には表示されません。</li><li>公開したセトリは、公開セトリのリンクを知っている人が誰でも見られます。メンバー向けメモ・MC・休憩・演奏時間は公開されません。</li><li>マイキーのリンクを知っている人は、そのマイキーで同期しているすべてのイベント・セトリを編集できます。</li><li>リンクは転送されると、転送先の人も同じように見られます。</li></ul><p>イベント・セトリのページは検索エンジンに載らないよう設定していますが、アクセスを制限するものではありません。公開停止や削除をしても、すでに保存・転載・撮影された内容は取り消せません。</p>
-<h2>保存期間と削除</h2><p>イベント・セトリとも、開催日の90日後（開催日が未設定なら最終更新の180日後。いずれも保存から最低30日）に自動で削除します。編集リンクからいつでも削除でき、削除するとすべてのリンクが使えなくなります。</p><p>マイキーの一覧は、最後に同期してから1年使われなければ自動で削除します。「このブラウザで作ったもの」のページからいつでも削除でき、削除後は削除済みであることを示す印だけを1年間残します（同じマイキーで作り直されないようにするため）。</p>
+<h2>保存期間と削除</h2><p>イベント・セトリとも、開催日の90日後（開催日が未設定なら最終更新の180日後。いずれも保存から最低30日）に自動で削除します。編集リンクからいつでも削除でき、削除するとすべてのリンクが使えなくなります。</p><p>マイキーの一覧は、最後に同期してから1年使われなければ自動で削除します。「作ったもの・マイキー」のページからいつでも削除でき、削除後は削除済みであることを示す印だけを1年間残します（同じマイキーで作り直されないようにするため）。</p>
 <h2>アクセス情報</h2><p>短時間の大量作成を防ぐため、作成時に接続元のIPアドレスを秘密の値と組み合わせて元に戻せない形に変換し、1時間単位の回数だけを記録します（IPアドレスそのものは保存しません）。このカウンタは毎日の定期処理で削除します（最長で1日程度残ります）。また、運用状況を把握するため、閲覧・作成・公開などの操作が成功した回数を、操作の種類ごと・日ごとに数えています。誰がどのページを見たか、IPアドレス、入力内容は記録せず、この回数は約90日で削除します。個人を識別するアクセス解析や、Cookie・広告による追跡は行っていません。</p>
 <h2>運営者による確認</h2><p>運営者は、運用状況を確認するため、上記の操作の回数と、イベント・セトリの件数、更新日時、保存期限、出演枠や曲の数、公開状態などの管理情報を見ることがあります。管理画面には、入力内容（タイトル・曲名・メモなど）やリンクは表示されません。</p>
 <h2>利用している外部サービス</h2><ul><li>GitHub Pages（画面の配信）</li><li>Cloudflare Workers・R2（保存と読み出し）</li><li>Google Fonts（文字の表示）</li><li>iTunes Search API（セトリの「曲を検索」を押したときのみ）</li></ul><p>ページを開くと、これらのサービスに通常の通信情報（IPアドレス、ブラウザの種類など）が送られます。「曲を検索」を押すと、その曲の曲名と原曲アーティストが Apple に送られます。各サービスでの取り扱いは、それぞれの方針に従います。</p>

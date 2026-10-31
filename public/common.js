@@ -14,7 +14,7 @@ const apiCall=async(path,options={})=>{let r;try{r=await fetch(API+path,{cache:'
 const noindex=()=>{const m=document.createElement('meta');m.name='robots';m.content='noindex';document.head.append(m);document.querySelector('link[rel=canonical]')?.remove()};
 // リンクのキーが変わったら、マイキーを設定している場合は同期する（同じ値の書き直しでは同期しない）
 const store=(k,v)=>{const changed=(v||'')!==load(k);try{if(v)localStorage.setItem(k,v);else localStorage.removeItem(k)}catch{}if(changed&&LINK_KEY.test(k)&&load(MYKEY))syncKeys().catch(()=>{})},load=k=>{try{return localStorage.getItem(k)||''}catch{return ''}};
-// マイキー（?page=mine で設定。有料化の対象）：このブラウザにあるリンクのキーの一覧を、マイキーから作った鍵で暗号化してサーバーに置き、同じマイキーの端末どうしで揃える
+// マイキー（?page=mine で設定。無料）：このブラウザにあるリンクのキーの一覧を、マイキーから作った鍵で暗号化してサーバーに置き、同じマイキーの端末どうしで揃える
 // 前回同期した一覧（MYBASE）と比べ、このブラウザで変わった分（追加・削除・作り直し）はこちらを、変わっていない分はサーバー側を採る
 const MYKEY='live-shiori-v1-mykey',MYBASE='live-shiori-v1-mykey-base',LINK_KEY=/^live-shiori-v1-(edit|setlist-edit|setlist-member)-[a-f0-9]{24}$/;
 // サーバーには、マイキーそのものではなく照合用の値（マイキーから導出）だけを送る

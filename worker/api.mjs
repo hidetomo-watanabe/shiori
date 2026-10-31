@@ -278,7 +278,7 @@ async function adminList(req,env,url){
  }))).filter(Boolean);
  return json({items,cursor:page.truncated?page.cursor:null});
 }
-// マイキー（端末間でキーの一覧を同期する。有料化の対象で、画面からはリンクしない ?page=mine から使う）。保存先は accounts/{照合用キーのハッシュ}
+// マイキー（端末間でキーの一覧を同期する。無料。?page=mine から使う）。保存先は accounts/{照合用キーのハッシュ}
 // 一覧は画面側でマイキーから作った鍵で暗号化してから送るため、サーバーは中身（各リンクのキー）を読めない。マイキーそのものも受け取らない（照合用キーはマイキーから導出）
 // 最終更新から1年使われなければ定期削除の対象にする。削除したら削除済みの印（deleted）だけを1年残し、同じマイキーを持つ別の端末の同期で作り直されないようにする
 export const ACCOUNT_KEEP_DAYS=365;const ACCOUNT_MAX={maxBytes:60000,maxChars:60000};
