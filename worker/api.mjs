@@ -300,9 +300,9 @@ async function accountRoute(req,env){
 // 動画の長さは検索結果に含まれないため、videos.list（1回1単位）で取り足す。取れなくても検索結果は返し、使い回すときに取り直す（durations が付くまで）
 // 無料枠は1日約100回（検索1回100単位／1万単位）のため、外から使い切られないよう次の順で絞る。検索語そのものは保存しない
 //  1. ブラウザの画面からの呼び出しに限る（Origin が許可されたドメイン、または同一オリジン）
-//  2. セトリの編集キーを持つ人だけ（?setlist={id} と Authorization。検索はセトリの編集画面でしか使わない）
-//  3. 同じ検索語の結果は7日間R2に保管して使い回す（使い回しは枠を使わないので回数に数えない）
-//  4. 新しい検索はIPごとに1日20回、サービス全体で1日90回まで。超えたら画面は「YouTube で開く」と iTunes の候補だけを出す
+//  （セトリの編集キーを求めることも検討したが、キーはセトリを作れば誰でも得られ守りにならず、保存前に検索できない不便さが勝るため見送った）
+//  2. 同じ検索語の結果は7日間R2に保管して使い回す（使い回しは枠を使わないので回数に数えない）
+//  3. 新しい検索はIPごとに1日20回、サービス全体で1日90回まで。超えたら画面は「YouTube で開く」と iTunes の候補だけを出す
 // 「1日」は YouTube の枠が戻る太平洋時間の0時（日本時間の16時か17時）で区切る
 export const YOUTUBE_LIMIT_PER_DAY=20,YOUTUBE_TOTAL_PER_DAY=90;const YOUTUBE_CACHE_DAYS=7;
 const ptDay=(t=Date.now())=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Los_Angeles',year:'numeric',month:'2-digit',day:'2-digit'}).format(t);
@@ -316,8 +316,7 @@ const unescapeHtml=s=>String(s||'').replace(/&(amp|lt|gt|quot|#39|#x27);/g,(_,e)
 async function youtubeSearch(req,env,url){
  if(req.method!=='GET')return fail('対応していない操作です',405);
  if(!fromBrowser(req,env))return fail('許可されていない操作です',403);
- const q=(url.searchParams.get('q')||'').trim(),setlistId=url.searchParams.get('setlist')||'';if(!q||q.length>401||!/^[a-f0-9]{24}$/.test(setlistId))return INVALID();
- const {error}=await setlistAuth(req,env,setlistId,['edit']);if(error)return error;
+ const q=(url.searchParams.get('q')||'').trim();if(!q||q.length>401)return INVALID();
  if(!env.YOUTUBE_API_KEY)return fail('YouTube の検索は準備中です。',503);
  const key='youtube/'+(await digest(q.toLowerCase())).slice(0,32),cached=await getRecord(env,key);
  if(cached&&!expired(cached.record)){const {record}=cached;if(!record.durations&&Array.isArray(record.videos)&&await addDurations(env,record.videos))await putNew(env,key,{...record,durations:true}).catch(()=>{});await track(req,env,'youtube_cache');return json({videos:record.videos})}
