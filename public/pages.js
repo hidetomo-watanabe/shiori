@@ -20,29 +20,34 @@ if(page==='mine'){document.title='作ったもの・マイキー｜ライブの�
  const sync=async()=>{if(!load(MYKEY))return panel();$('mine-status').textContent='同期中…';try{panel(await syncKeys())}catch(e){panel(null,e.message)}};
  $('mykey').addEventListener('click',async e=>{const id=e.target.id;
   if(id==='mykey-copy')copyText($('mykey-url'),'マイキーのリンクをコピーしました。別の端末で開いてください。');
-  if(id==='mykey-off'){if(!confirm('この端末でマイキーを使うのをやめます。\nこの端末の一覧はそのまま残りますが、ほかの端末とは揃わなくなります。やめますか？'))return;forgetMyKey();panel();await list()}
+  if(id==='mykey-off'){if(!confirm('この端末でマイキーを使うのをやめます。\nこの端末の一覧はそのまま残りますが、ほかの端末とは揃わなくなります。やめますか？'))return;forgetMyKey();panel();admin='';await list()}
   // 削除：サーバーの一覧を消し、どの端末でもこのマイキーを使えなくする。各端末のリンクのキーはそのまま残す
-  if(id==='mykey-delete'){if(!confirm('マイキーを削除します。\nサーバーに保存した一覧が消え、どの端末でもこのマイキーは使えなくなります。各端末で開けるイベント・セトリはそのまま残ります。削除しますか？'))return;e.target.disabled=true;try{await apiCall('/api/account',{method:'DELETE',headers:await accountAuth(load(MYKEY))})}catch(e2){if(e2.status!==404&&e2.status!==410){toast(e2.message);e.target.disabled=false;return}}forgetMyKey();panel();await list();toast('マイキーを削除しました。')}
-  if(id==='mykey-new'){store(MYKEY,Array.from(crypto.getRandomValues(new Uint8Array(24)),b=>b.toString(16).padStart(2,'0')).join(''));store(MYBASE,'');await sync();await list()}
+  if(id==='mykey-delete'){if(!confirm('マイキーを削除します。\nサーバーに保存した一覧が消え、どの端末でもこのマイキーは使えなくなります。各端末で開けるイベント・セトリはそのまま残ります。削除しますか？'))return;e.target.disabled=true;try{await apiCall('/api/account',{method:'DELETE',headers:await accountAuth(load(MYKEY))})}catch(e2){if(e2.status!==404&&e2.status!==410){toast(e2.message);e.target.disabled=false;return}}forgetMyKey();panel();admin='';await list();toast('マイキーを削除しました。')}
+  if(id==='mykey-new'){store(MYKEY,Array.from(crypto.getRandomValues(new Uint8Array(24)),b=>b.toString(16).padStart(2,'0')).join(''));store(MYBASE,'');await sync();await checkAdmin();await list()}
   if(id==='mykey-use'){const m=$('mykey-input').value.trim().match(/^(?:.*#mykey=)?([a-f0-9]{48})$/);if(!m){toast('マイキーのリンクを確認してください。');return}
    // 打ち間違いで新しいマイキーができないよう、サーバーにあるものだけ受け付ける
-   e.target.disabled=true;try{await apiCall('/api/account',{headers:await accountAuth(m[1])});store(MYKEY,m[1]);store(MYBASE,'');await sync();await list()}catch(e2){toast(e2.status===404?'このマイキーは見つかりません。リンクを確認してください。':e2.message);e.target.disabled=false}}});
+   e.target.disabled=true;try{await apiCall('/api/account',{headers:await accountAuth(m[1])});store(MYKEY,m[1]);store(MYBASE,'');await sync();await checkAdmin();await list()}catch(e2){toast(e2.status===404?'このマイキーは見つかりません。リンクを確認してください。':e2.message);e.target.disabled=false}}});
+ // 管理用マイキー（運営者）のときだけ、運営管理へのリンクと、各イベント・セトリのプラン（free／paid）の切り替えを出す。利用者には何も出さない
+ let admin='';const checkAdmin=async()=>{admin='';const my=load(MYKEY);if(!my)return;const auth=await accountAuth(my);try{const r=await fetch(API+'/api/admin/whoami',{cache:'no-store',headers:auth});if(r.ok)admin=auth.Authorization}catch{}};
  const list=async()=>{
  const keys=Object.entries(linkKeys()).map(([key,token])=>{const [,kind,id]=key.match(/^live-shiori-v1-(.+)-([a-f0-9]{24})$/);return {kind,id,key,token}});
  const editSet=new Set(keys.filter(k=>k.kind==='setlist-edit').map(k=>k.id)),targets=keys.filter(k=>!(k.kind==='setlist-member'&&editSet.has(k.id))).slice(0,90);
  const fetchOne=async t=>{const path=t.kind==='edit'?'/api/events/':'/api/setlists/';try{const r=await fetch(API+path+t.id,{cache:'no-store',headers:{Authorization:'Bearer '+t.token}});if(r.status===404)return {...t,gone:true};const b=await r.json();if(!r.ok||!b?.data)return {...t,error:true};return {...t,b}}catch{return {...t,error:true}}};
  const all=await Promise.all(targets.map(fetchOne)),pick=kind=>all.filter(x=>x.kind===kind).sort((a,b)=>String(b.b?.updatedAt||'').localeCompare(String(a.b?.updatedAt||'')));
- const row=(x,href,title,meta)=>x.gone?`<div class="mine-row gone"><div><b>見つかりません</b><span>削除されたか、保存期間が終わったか、リンクが作り直されました</span></div><button class="text-btn" data-forget="${esc(x.key)}">一覧から外す</button></div>`:x.error?`<div class="mine-row gone"><div><b>読み込めませんでした</b><span>時間をおいて再度お試しください</span></div></div>`:`<a class="mine-row" href="${esc(href)}"><div><b>${esc(title)}</b><span>${meta}</span></div><span class="mine-go">開く →</span></a>`;
+ const row=(x,href,title,meta)=>x.gone?`<div class="mine-row gone"><div><b>見つかりません</b><span>削除されたか、保存期間が終わったか、リンクが作り直されました</span></div><button class="text-btn" data-forget="${esc(x.key)}">一覧から外す</button></div>`:x.error?`<div class="mine-row gone"><div><b>読み込めませんでした</b><span>時間をおいて再度お試しください</span></div></div>`:`${admin&&x.kind!=='setlist-member'?'<div class="mine-admin">':''}<a class="mine-row" href="${esc(href)}"><div><b>${esc(title)}</b><span>${meta}</span></div><span class="mine-go">開く →</span></a>${admin&&x.kind!=='setlist-member'?`<button type="button" class="plan-btn${x.b?.plan==='paid'?' paid':''}" data-type="${x.kind==='edit'?'events':'setlists'}" data-id="${x.id}" data-plan="${x.b?.plan==='paid'?'paid':'free'}" title="運営者のみ：押すと${x.b?.plan==='paid'?'free':'paid'}にします">${x.b?.plan==='paid'?'paid':'free'}</button></div>`:''}`;
  const section=(h,list,empty,href)=>`<h2>${h}${href?`<a class="mine-new" href="${href}">＋ 新しくつくる</a>`:''}</h2>${list.length?list.join(''):`<p class="tip">${empty}</p>`}`;
  const events=pick('edit').map(x=>row(x,'?event='+x.id,x.b?.data.title||'タイトル未入力',x.b?[day(x.b.data.date),x.b.data.venue&&'@'+esc(x.b.data.venue),'更新 '+at(x.b.updatedAt),!x.b.manage&&'編集リンクが無効の可能性があります'].filter(Boolean).join(' · '):''));
  const sl=x=>x.b?[x.b.data.date?day(x.b.data.date):'',x.b.publication?.published?'公開中':'未公開',x.b.link?.valid?'イベントに紐づけ済み':'','更新 '+at(x.b.updatedAt)].filter(Boolean).join(' · '):'';
  const setlists=pick('setlist-edit').map(x=>row(x,'?setlist='+x.id,x.b?.data.title||'タイトル未入力',sl(x)));
  const member=pick('setlist-member').map(x=>row(x,'?setlist='+x.id+'&view=member',x.b?.data.title||'タイトル未入力',sl(x)));
  const where=load(MYKEY)?'このブラウザと同じマイキーの端末で':'このブラウザで';
- $('mine-body').innerHTML=section('イベント',events,where+'作ったイベントはありません。','./#timetable')+section('セトリ',setlists,where+'作ったセトリはありません。','?setlist=new')+(member.length?section('メンバーとして見ているセトリ',member,''):'');
+ $('mine-body').innerHTML=(admin?'<p class="mine-adminbar">運営者として表示中：<a href="?page=admin">運営管理を開く →</a><span>右のボタンで free／paid を切り替えます（paid は自動削除なし）</span></p>':'')+section('イベント',events,where+'作ったイベントはありません。','./#timetable')+section('セトリ',setlists,where+'作ったセトリはありません。','?setlist=new')+(member.length?section('メンバーとして見ているセトリ',member,''):'');
  $('mine-status').textContent=targets.length?'':where+'作ったイベント・セトリはありません。';};
- $('mine-body').addEventListener('click',e=>{const k=e.target.dataset.forget;if(!k)return;store(k,'');e.target.closest('.mine-row').remove()});
- await sync();await list();
+ $('mine-body').addEventListener('click',async e=>{const b=e.target.closest('.plan-btn');
+  if(b&&admin){const plan=b.dataset.plan==='paid'?'free':'paid';b.disabled=true;try{const r=await fetch(API+'/api/admin/plan',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json',Authorization:admin},body:JSON.stringify({type:b.dataset.type,id:b.dataset.id,plan})});const body=await r.json().catch(()=>null);if(!r.ok||!body)throw Error(body?.error||'切り替えられませんでした（'+r.status+'）');
+   b.dataset.plan=body.plan;b.textContent=body.plan;b.classList.toggle('paid',body.plan==='paid');b.title='運営者のみ：押すと'+(body.plan==='paid'?'free':'paid')+'にします';toast(body.plan==='paid'?'paid にしました（自動削除なし）':'free にしました（'+new Date(body.expiresAt).toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo'})+' に自動削除）')}catch(e2){toast(e2.message)}finally{b.disabled=false}return}
+  const k=e.target.dataset.forget;if(!k)return;store(k,'');e.target.closest('.mine-row').remove()});
+ await sync();await checkAdmin();await list();
  return;}
 // 運営管理（?page=admin）：管理キーでイベント・セトリの状態の一覧を表示する。入力内容・完全なIDはAPIが返さない
 if(page==='admin'){document.title='運営管理｜ライブのしおり';noindex();
@@ -78,7 +83,7 @@ if(page==='admin'){document.title='運営管理｜ライブのしおり';noindex
 ${usage(st)}
 <h2>イベント</h2>${table(['ID','プラン','最終更新','保存回数','出演枠','休憩','紐づけ用リンク','紐づけ','保存期限'],events.map(e=>`<tr class="${e.expired?'expired':''}"><td><code>${esc(e.id)}</code></td>${planCell('events',e)}<td>${at(e.updatedAt)}</td><td>${e.revision}</td><td>${e.slots}</td><td>${e.breaks}</td><td>${e.connectKeys}</td><td>${e.links}</td><td class="exp">${e.expired?'期限切れ':e.expiresAt?at(e.expiresAt):'自動削除なし'}</td></tr>`))}
 <h2>セトリ</h2>${table(['ID','プラン','最終更新','保存回数','曲数','項目数','動画','公開','初回公開','紐づけ','保存期限'],setlists.map(x=>`<tr class="${x.expired?'expired':''}"><td><code>${esc(x.id)}</code></td>${planCell('setlists',x)}<td>${at(x.updatedAt)}</td><td>${x.revision}</td><td>${x.songs}</td><td>${x.items}</td><td>${x.videos}</td><td>${x.published?'公開中':'—'}</td><td>${at(x.firstPublishedAt)}</td><td>${x.linked?'あり':'—'}</td><td class="exp">${x.expired?'期限切れ':x.expiresAt?at(x.expiresAt):'自動削除なし'}</td></tr>`))}
-${st.role==='master'?'<div id="admin-mykeys"></div>':''}<p class="tip">プランのボタンで free／paid を切り替えます（利用者の画面には出ません。paid は自動削除されません。free に戻すと通常の保存期間になり、少なくとも30日は残ります）。IDは先頭6文字だけを表示しています。日時は日本時間。紐づけの数は片側だけ残った情報も含みます。</p>`;$('admin-status').textContent=`${at(new Date().toISOString())} 時点`;$('admin-form').hidden=true;bindPlans(key);if(st.role==='master')mykeyPanel(key)}
+${st.role==='master'?'<div id="admin-mykeys"></div>':''}<p class="tip">プランのボタンで free／paid を切り替えます（利用者の画面には出ません。paid は自動削除されません。free に戻すと通常の保存期間になり、少なくとも30日は残ります）。IDは先頭6文字だけを表示しています。日時は日本時間。紐づけの数は片側だけ残った情報も含みます。</p>`;$('admin-status').innerHTML=`${at(new Date().toISOString())} 時点${st.role==='mykey'?'（管理用マイキーで表示中。管理用マイキーの登録・解除は<button type="button" class="text-btn inline" id="admin-relogin">管理キーでログイン</button>してから）':''}`;$('admin-form').hidden=true;if($('admin-relogin'))$('admin-relogin').onclick=()=>{$('admin-form').hidden=false;$('admin-key').focus()};bindPlans(key);if(st.role==='master')mykeyPanel(key)}
   catch(e){if(mykey){$('admin-status').textContent='';return}$('admin-status').textContent=e.message;try{sessionStorage.removeItem(KEYNAME)}catch{}}};
  $('admin-form').onsubmit=e=>{e.preventDefault();const key=$('admin-key').value.trim();if(key)show(key)};
  // 管理キーを入れたタブならそれで、なければ管理用マイキー（このブラウザのマイキー）で開く。マイキーが未登録ならフォームのまま

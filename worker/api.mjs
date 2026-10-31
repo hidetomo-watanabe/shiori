@@ -73,7 +73,7 @@ export async function api(req,env,ctx){
  return res;
 }
 async function route(req,env){
- const url=new URL(req.url);if(url.pathname==='/api/admin/list')return adminList(req,env,url);if(url.pathname==='/api/admin/stats')return adminStats(req,env,url);if(url.pathname==='/api/admin/plan')return adminPlan(req,env);if(url.pathname==='/api/admin/mykeys')return adminMykeys(req,env);
+ const url=new URL(req.url);if(url.pathname==='/api/admin/list')return adminList(req,env,url);if(url.pathname==='/api/admin/stats')return adminStats(req,env,url);if(url.pathname==='/api/admin/plan')return adminPlan(req,env);if(url.pathname==='/api/admin/mykeys')return adminMykeys(req,env);if(url.pathname==='/api/admin/whoami'){const role=await adminAuth(req,env);return denied(role)?role:json({role})}
  const isYoutube=url.pathname==='/api/youtube',isInterest=url.pathname==='/api/interest',isAccount=url.pathname==='/api/account',isSetlist=/^\/api\/setlists(\/|$)/.test(url.pathname),match=url.pathname.match(/^\/api\/events(?:\/([a-f0-9]{24})(?:\/slots\/([a-f0-9]{12})\/(connect-key|connect|link))?)?$/);if(!match&&!isSetlist&&!isYoutube&&!isAccount&&!isInterest)return NOT_FOUND();
  if(!env.BUCKET)return fail('保存先の準備ができていません。時間をおいて再度お試しください。',503);
  if(!['GET','POST','PUT','DELETE'].includes(req.method))return fail('対応していない操作です',405);
@@ -150,7 +150,7 @@ async function setlistRoute(req,env,url){
   return json({id:setlistId,editToken,memberToken:member,memberGen:1,revision:1,updatedAt:record.updatedAt,expiresAt:record.expiresAt},201);
  }
  if(!id||(sub&&!((sub==='/keys'||sub==='/publish'||sub==='/link')&&req.method==='POST'||sub==='/link'&&req.method==='DELETE')))return NOT_FOUND();
- if(req.method==='GET'){const {error,record,role}=await setlistAuth(req,env,id,['edit','member']);if(error)return error;if(role==='member')await track(req,env,'member_view');return json({data:record.data,role,revision:record.revision,updatedAt:record.updatedAt,expiresAt:record.expiresAt??null,publication:publicationStatus(record),link:await linkInfo(env,id,record.link),...(role==='edit'?{memberGen:record.memberGen}:{})})}
+ if(req.method==='GET'){const {error,record,role}=await setlistAuth(req,env,id,['edit','member']);if(error)return error;if(role==='member')await track(req,env,'member_view');return json({data:record.data,role,revision:record.revision,updatedAt:record.updatedAt,expiresAt:record.expiresAt??null,publication:publicationStatus(record),link:await linkInfo(env,id,record.link),...(role==='edit'?{memberGen:record.memberGen,plan:record.plan==='paid'?'paid':'free'}:{})})}
  const {error,obj,record,token}=await setlistAuth(req,env,id,['edit']);if(error)return error;
  const put=async next=>await putIf(env,'setlists/'+id,next,obj.etag)?null:CONFLICT();
  if(req.method==='DELETE'&&sub==='/link'){if(record.link){const conflict=await put({...record,link:null});if(conflict)return conflict;await unlinkEvent(env,id,record.link);await track(req,env,'unlink')}return json({linked:false})}
@@ -287,13 +287,13 @@ async function adminList(req,env,url){
  return json({items,cursor:page.truncated?page.cursor:null});
 }
 // 運営管理：イベント・セトリ1件のプラン（free／paid）を切り替える。利用者側からは変えられない（作成時は free、更新でも変わらない）
-// 一覧と同じく完全なIDは扱わず、一覧に出している先頭6文字で指定する。同じ先頭6文字が複数あるときは切り替えない
+// 管理画面からは一覧に出している先頭6文字で指定する（同じ先頭6文字が複数あるときは切り替えない）。「作ったもの」の一覧（管理用マイキーのとき）からは完全なIDで指定する
 // 保存期間はプランに合わせて計算し直す（基準は最終更新日時。paid は自動削除なし）。paid から free に戻すときは、すぐ消えないよう今から最低30日は残す。編集中の人と衝突しないよう revision・updatedAt は変えない
 async function adminPlan(req,env){
  const role=await adminAuth(req,env,'POST');if(denied(role))return role;
  const {error,body}=await readJson(req,{maxBytes:200,maxChars:200});if(error)return error;
- if(!isObj(body)||!['events','setlists'].includes(body.type)||typeof body.id!=='string'||!/^[a-f0-9]{6}$/.test(body.id)||!['free','paid'].includes(body.plan))return INVALID();
- const keys=(await env.BUCKET.list({prefix:body.type+'/'+body.id,limit:2})).objects.map(o=>o.key);
+ if(!isObj(body)||!['events','setlists'].includes(body.type)||typeof body.id!=='string'||!/^([a-f0-9]{6}|[a-f0-9]{24})$/.test(body.id)||!['free','paid'].includes(body.plan))return INVALID();
+ const keys=body.id.length===24?[body.type+'/'+body.id]:(await env.BUCKET.list({prefix:body.type+'/'+body.id,limit:2})).objects.map(o=>o.key);
  if(keys.length>1)return fail('同じ先頭6文字のものが複数あるため切り替えられません。',409);
  const found=keys.length&&await getRecord(env,keys[0]);if(!found||expired(found.record))return fail('見つからないか、保存期間が終わっています。',404);
  const {record,obj}=found,now=Date.now(),exp=computeExpiry(record.data,body.plan,Date.parse(record.updatedAt)||now),floor=now+STANDARD_RETENTION.minDays*DAY;
