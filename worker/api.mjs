@@ -280,19 +280,21 @@ async function adminList(req,env,url){
 }
 // マイキー（端末間でキーの一覧を同期する。有料化の対象で、画面からはリンクしない ?page=mine から使う）。保存先は accounts/{照合用キーのハッシュ}
 // 一覧は画面側でマイキーから作った鍵で暗号化してから送るため、サーバーは中身（各リンクのキー）を読めない。マイキーそのものも受け取らない（照合用キーはマイキーから導出）
-// 最終更新から1年使われなければ定期削除の対象にする
+// 最終更新から1年使われなければ定期削除の対象にする。削除したら削除済みの印（deleted）だけを1年残し、同じマイキーを持つ別の端末の同期で作り直されないようにする
 export const ACCOUNT_KEEP_DAYS=365;const ACCOUNT_MAX={maxBytes:60000,maxChars:60000};
 async function accountRoute(req,env){
  const token=bearer(req);if(!token)return fail('マイキーが必要です',403);
  const key='accounts/'+(await digest(token)).slice(0,48),found=await getRecord(env,key);
- if(req.method==='GET'){if(!found||expired(found.record))return fail('マイキーのデータがありません',404);return json({data:found.record.data,revision:found.record.revision})}
- if(req.method==='DELETE'){await env.BUCKET.delete(key);return json({deleted:true})}
+ const current=found&&!expired(found.record)?found.record:null,DELETED=()=>fail('このマイキーは削除されています',410);if(current?.deleted)return DELETED();
+ if(req.method==='GET'){if(!current)return fail('マイキーのデータがありません',404);return json({data:current.data,revision:current.revision})}
+ const now=Date.now(),keep=new Date(now+ACCOUNT_KEEP_DAYS*DAY).toISOString();
+ if(req.method==='DELETE'){if(!current)return fail('マイキーのデータがありません',404);await env.BUCKET.put(key,JSON.stringify({deleted:true,expiresAt:keep}),expiryMeta({expiresAt:keep}));return json({deleted:true})}
  if(req.method!=='PUT')return NOT_FOUND();
  const {error,body}=await readJson(req,ACCOUNT_MAX);if(error)return error;
  if(!isObj(body)||typeof body.data!=='string'||!/^[A-Za-z0-9+/=]{1,50000}$/.test(body.data)||!Number.isInteger(body.revision))return INVALID();
- const current=found&&!expired(found.record)?found.record:null;if(body.revision!==(current?.revision||0))return CONFLICT();
+ if(body.revision!==(current?.revision||0))return CONFLICT();
  if(!current&&await rateLimited(req,env,'account'))return RATE_LIMITED();
- const now=Date.now(),next={data:body.data,revision:body.revision+1,updatedAt:new Date(now).toISOString(),expiresAt:new Date(now+ACCOUNT_KEEP_DAYS*DAY).toISOString()};
+ const next={data:body.data,revision:body.revision+1,updatedAt:new Date(now).toISOString(),expiresAt:keep};
  if(found){if(!await putIf(env,key,next,found.obj.etag))return CONFLICT()}else await putNew(env,key,next);
  return json({revision:next.revision});
 }

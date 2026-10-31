@@ -25,14 +25,16 @@ const sameKeys=(a,b)=>Object.keys(a).length===Object.keys(b).length&&Object.keys
 const aesKey=async my=>crypto.subtle.importKey('raw',Uint8Array.from((await sha(my+':enc')).match(/../g),h=>parseInt(h,16)),'AES-GCM',false,['encrypt','decrypt']);
 const seal=async(key,o)=>{const iv=crypto.getRandomValues(new Uint8Array(12)),ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(JSON.stringify(o))));return btoa(String.fromCharCode(...iv,...ct))};
 const unseal=async(key,s)=>{try{const b=Uint8Array.from(atob(s),c=>c.charCodeAt(0)),o=JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:b.slice(0,12)},key,b.slice(12))));return Object.fromEntries(Object.entries(isObj(o)?o:{}).filter(([k,v])=>LINK_KEY.test(k)&&/^[a-f0-9]{48}$/.test(v)))}catch{throw Error('マイキーの一覧を読み込めませんでした。')}};
+const forgetMyKey=()=>{store(MYKEY,'');store(MYBASE,'')};
 async function syncOnce(){
  const my=load(MYKEY);if(!/^[a-f0-9]{48}$/.test(my))return null;
  const headers=await accountAuth(my),key=await aesKey(my);
  for(let n=0;n<3;n++){
-  let remote={},revision=0;try{const r=await apiCall('/api/account',{headers});remote=await unseal(key,r.data);revision=r.revision}catch(e){if(e.status!==404)throw e}
+  // 別の端末でマイキーが削除されていたら、この端末でも使うのをやめる（各リンクのキーは残す）
+  let remote={},revision=0;try{const r=await apiCall('/api/account',{headers});remote=await unseal(key,r.data);revision=r.revision}catch(e){if(e.status===410){forgetMyKey();return null}if(e.status!==404)throw e}
   let base={};try{base=JSON.parse(load(MYBASE))||{}}catch{}
   const local=linkKeys(),next={};for(const k of new Set([...Object.keys(base),...Object.keys(local),...Object.keys(remote)])){const v=local[k]!==base[k]?local[k]:remote[k];if(v)next[k]=v}
-  if(!revision||!sameKeys(next,remote))try{await apiCall('/api/account',{method:'PUT',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({data:await seal(key,next),revision})})}catch(e){if(e.status===409)continue;throw e}
+  if(!revision||!sameKeys(next,remote))try{await apiCall('/api/account',{method:'PUT',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({data:await seal(key,next),revision})})}catch(e){if(e.status===409)continue;if(e.status===410){forgetMyKey();return null}throw e}
   try{for(const k in local)if(!next[k])localStorage.removeItem(k);for(const k in next)localStorage.setItem(k,next[k]);localStorage.setItem(MYBASE,JSON.stringify(next))}catch{}
   return Object.keys(next).length;
  }
@@ -58,5 +60,5 @@ window.addEventListener('beforeprint',()=>{const p=document.getElementById('post
 window.addEventListener('afterprint',()=>document.documentElement.classList.remove('print-light'));
 // 開いたときにも同期しておく（別の端末で作ったものを取り込む）。?page=mine は一覧を出す前に自分で同期する
 if(load(MYKEY)&&new URLSearchParams(location.search).get('page')!=='mine')syncKeys().catch(()=>{});
-return {API,isObj,esc,jst,jpDate,host,normUrl,sha,apiCall,noindex,store,load,toast,copyText,isMobile,lineShare,viewShare,MYKEY,MYBASE,accountAuth,linkKeys,syncKeys};
+return {API,isObj,esc,jst,jpDate,host,normUrl,sha,apiCall,noindex,store,load,toast,copyText,isMobile,lineShare,viewShare,MYKEY,MYBASE,accountAuth,linkKeys,syncKeys,forgetMyKey};
 })();

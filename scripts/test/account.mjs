@@ -1,4 +1,4 @@
-// マイキー：照合用キーで暗号化済みの一覧を保存・取得。同時更新は409、キーなし403、1年使われなければ定期削除
+// マイキー：照合用キーで暗号化済みの一覧を保存・取得。同時更新は409、キーなし403、1年使われなければ定期削除、削除後は410で作り直さない
 import assert from 'node:assert/strict';
 import {api,cleanup} from '../../worker/api.mjs';
 import {records,env} from './helpers.mjs';
@@ -16,4 +16,6 @@ const key=[...records.keys()].find(k=>k.startsWith('accounts/'));assert.ok(key&&
 assert.equal((await ac('GET',undefined,'d'.repeat(48))).status,404,'別のキーでは読めない');
 assert.equal((await ac('POST',{data:'QUJD',revision:0},t)).status,404);
 records.set(key,{...records.get(key),customMetadata:{expiresAt:'2020-01-01T00:00:00.000Z'}});assert.equal((await cleanup(env)).accounts,1);assert.ok(!records.has(key));
-await ac('PUT',{data:'QUJD',revision:0},t,'203.0.113.200');assert.equal((await(await ac('DELETE',undefined,t)).json()).deleted,true);assert.equal((await ac('GET',undefined,t)).status,404);}
+await ac('PUT',{data:'QUJD',revision:0},t,'203.0.113.200');assert.equal((await(await ac('DELETE',undefined,t)).json()).deleted,true);
+assert.equal((await ac('GET',undefined,t)).status,410,'削除済み');assert.equal((await ac('PUT',{data:'QUJD',revision:0},t)).status,410,'別の端末の同期で作り直さない');assert.equal((await ac('DELETE',undefined,t)).status,410);
+assert.ok(!records.get(key).value.includes('QUJD'),'一覧は消える');assert.equal((await ac('DELETE',undefined,'e'.repeat(48))).status,404);}

@@ -4,7 +4,7 @@ const page=new URLSearchParams(location.search).get('page');if(!['mine','admin',
 const $=id=>document.getElementById(id),{API,esc,noindex}=shiori;
 // このブラウザで作ったもの（?page=mine）：端末に保存された編集キー・メンバー用キーで一覧を出す。画面からはリンクしない（URLを知っている人向け）
 if(page==='mine'){document.title='このブラウザで作ったもの｜ライブのしおり';noindex();
- const P='live-shiori-v1-',{store,load,apiCall,copyText,toast,MYKEY,MYBASE,accountAuth,linkKeys,syncKeys}=shiori;
+ const P='live-shiori-v1-',{store,load,apiCall,copyText,toast,MYKEY,MYBASE,accountAuth,linkKeys,syncKeys,forgetMyKey}=shiori;
  const day=d=>d?new Date(d+'T12:00:00+09:00').toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'numeric',day:'numeric',weekday:'short'}):'日付未定';
  const at=iso=>iso?new Date(iso).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
  // マイキーのリンク（#mykey=）で開いたら、この端末に保管してアドレスバーから消す。前回同期した一覧は別のマイキーのものなので捨てる
@@ -14,12 +14,14 @@ if(page==='mine'){document.title='このブラウザで作ったもの｜ライ�
  document.documentElement.classList.remove('loading');
  // マイキーの欄：未設定なら「作る」「ほかの端末のマイキーを使う」、設定済みなら別の端末で開くリンク
  const panel=count=>{const my=load(MYKEY);$('mine-lead').innerHTML=my?'このブラウザと、同じマイキーを使っている端末で作成した、または編集リンク・メンバー用リンクを開いたイベントとセトリです。':'このブラウザで作成した、または編集リンク・メンバー用リンクを開いたイベントとセトリです。<br>別の端末やブラウザで作ったものは表示されません。';
-  $('mykey').innerHTML=my?`<h2>マイキー</h2><p class="tip">同じマイキーを使っている端末どうしで、この一覧と編集の権限が揃います${count==null?'':`（${count}件）`}。別の端末では、下のリンクを一度開いてください。</p><input id="mykey-url" readonly value="${esc(location.origin+location.pathname+'?page=mine#mykey='+my)}" aria-label="マイキーのリンク"><button class="secondary" id="mykey-copy">マイキーのリンクをコピー</button><p class="tip">マイキーのリンクを持つ人は、ここにあるすべてのイベント・セトリを編集できます。自分以外には送らないでください。なくすと取り戻せません（各端末にはこれまでどおり残ります）。</p><button class="text-btn" id="mykey-off">この端末でマイキーを使うのをやめる</button>`
+  $('mykey').innerHTML=my?`<h2>マイキー</h2><p class="tip">同じマイキーを使っている端末どうしで、この一覧と編集の権限が揃います${count==null?'':`（${count}件）`}。別の端末では、下のリンクを一度開いてください。</p><input id="mykey-url" readonly value="${esc(location.origin+location.pathname+'?page=mine#mykey='+my)}" aria-label="マイキーのリンク"><button class="secondary" id="mykey-copy">マイキーのリンクをコピー</button><p class="tip">マイキーのリンクを持つ人は、ここにあるすべてのイベント・セトリを編集できます。自分以外には送らないでください。なくすと取り戻せません（各端末にはこれまでどおり残ります）。</p><button class="text-btn" id="mykey-off">この端末でマイキーを使うのをやめる</button><button class="text-btn danger-text" id="mykey-delete">マイキーを削除</button>`
   :`<h2>マイキー</h2><p class="tip">マイキーを作ると、別の端末やブラウザでも同じ一覧が表示され、そのまま編集できます。</p><button class="primary" id="mykey-new">マイキーを作る</button><label>ほかの端末で作ったマイキーを使う<input id="mykey-input" autocomplete="off" placeholder="マイキーのリンクを貼り付け"></label><button class="secondary" id="mykey-use">この端末で使う</button>`};
  const sync=async()=>{if(!load(MYKEY))return panel();$('mine-status').textContent='同期中…';try{panel(await syncKeys())}catch(e){panel();toast(e.message)}};
  $('mykey').addEventListener('click',async e=>{const id=e.target.id;
   if(id==='mykey-copy')copyText($('mykey-url'),'マイキーのリンクをコピーしました。別の端末で開いてください。');
-  if(id==='mykey-off'){if(!confirm('この端末でマイキーを使うのをやめます。\nこの端末の一覧はそのまま残りますが、ほかの端末とは揃わなくなります。やめますか？'))return;store(MYKEY,'');store(MYBASE,'');panel();await list()}
+  if(id==='mykey-off'){if(!confirm('この端末でマイキーを使うのをやめます。\nこの端末の一覧はそのまま残りますが、ほかの端末とは揃わなくなります。やめますか？'))return;forgetMyKey();panel();await list()}
+  // 削除：サーバーの一覧を消し、どの端末でもこのマイキーを使えなくする。各端末のリンクのキーはそのまま残す
+  if(id==='mykey-delete'){if(!confirm('マイキーを削除します。\nサーバーに保存した一覧が消え、どの端末でもこのマイキーは使えなくなります。各端末で開けるイベント・セトリはそのまま残ります。削除しますか？'))return;e.target.disabled=true;try{await apiCall('/api/account',{method:'DELETE',headers:await accountAuth(load(MYKEY))})}catch(e2){if(e2.status!==404&&e2.status!==410){toast(e2.message);e.target.disabled=false;return}}forgetMyKey();panel();await list();toast('マイキーを削除しました。')}
   if(id==='mykey-new'){store(MYKEY,Array.from(crypto.getRandomValues(new Uint8Array(24)),b=>b.toString(16).padStart(2,'0')).join(''));store(MYBASE,'');await sync();await list()}
   if(id==='mykey-use'){const m=$('mykey-input').value.trim().match(/^(?:.*#mykey=)?([a-f0-9]{48})$/);if(!m){toast('マイキーのリンクを確認してください。');return}
    // 打ち間違いで新しいマイキーができないよう、サーバーにあるものだけ受け付ける
@@ -69,14 +71,14 @@ ${usage(st)}
 if(page==='privacy'){document.title='プライバシーについて｜ライブのしおり';document.querySelector('link[rel=canonical]').href='https://shiori.whathides.co.jp/?page=privacy';
  document.querySelector('.intro').outerHTML='<section class="intro"><h1><span>プライバシーについて</span></h1><p>ライブのしおりが扱う情報と、その保存・公開の範囲をまとめています。</p></section>';
  document.querySelector('.workspace').outerHTML=`<article class="card doc">
-<h2>アカウントはありません</h2><p>登録やログインはなく、氏名・メールアドレス・電話番号などはお預かりしません。イベントやセトリは、作成時に発行される秘密のリンク（閲覧・編集・メンバー用・紐づけ用・公開セトリ）で見たり編集したりします。</p>
-<h2>保存する情報</h2><ul><li>イベント・セトリに入力された内容（イベント名、出演者名、曲名、メモ、コメント、動画リンクなど）</li><li>作成・更新日時、保存期限、公開状態、イベントとセトリの紐づけ</li><li>リンクの照合用データ（秘密のリンクそのものではなく、元に戻せない形に変換した値）</li></ul><p>入力欄には個人情報を書かないでください。</p>
-<h2>見られる人</h2><ul><li>イベントの閲覧リンクを知っている人は、誰でもイベントの内容を見られます。</li><li>公開前のセトリは、メンバー用リンクまたは編集リンクを知っている人だけが見られます。主催者を含め、イベント側には表示されません。</li><li>公開したセトリは、公開セトリのリンクを知っている人が誰でも見られます。メンバー向けメモ・MC・休憩・演奏時間は公開されません。</li><li>リンクは転送されると、転送先の人も同じように見られます。</li></ul><p>イベント・セトリのページは検索エンジンに載らないよう設定していますが、アクセスを制限するものではありません。公開停止や削除をしても、すでに保存・転載・撮影された内容は取り消せません。</p>
-<h2>保存期間と削除</h2><p>イベント・セトリとも、開催日の90日後（開催日が未設定なら最終更新の180日後。いずれも保存から最低30日）に自動で削除します。編集リンクからいつでも削除でき、削除するとすべてのリンクが使えなくなります。</p>
+<h2>アカウントはありません</h2><p>登録やログインはなく、氏名・メールアドレス・電話番号などはお預かりしません。イベントやセトリは、作成時に発行される秘密のリンク（閲覧・編集・メンバー用・紐づけ用・公開セトリ）で見たり編集したりします。</p><p>別の端末やブラウザでも同じように編集したい場合は、マイキーを使えます（任意）。マイキーも秘密のリンクの一つで、個人情報の入力は不要です。</p>
+<h2>保存する情報</h2><ul><li>イベント・セトリに入力された内容（イベント名、出演者名、曲名、メモ、コメント、動画リンクなど）</li><li>作成・更新日時、保存期限、公開状態、イベントとセトリの紐づけ</li><li>リンクの照合用データ（秘密のリンクそのものではなく、元に戻せない形に変換した値）</li><li>マイキーを使う場合：同期する編集リンク・メンバー用リンクの一覧と更新日時。一覧は、お使いの端末でマイキーから作った鍵で暗号化してから送るため、運営者を含めサーバー側では中身を読めません。マイキーそのものも送りません。</li></ul><p>入力欄には個人情報を書かないでください。</p>
+<h2>見られる人</h2><ul><li>イベントの閲覧リンクを知っている人は、誰でもイベントの内容を見られます。</li><li>公開前のセトリは、メンバー用リンクまたは編集リンクを知っている人だけが見られます。主催者を含め、イベント側には表示されません。</li><li>公開したセトリは、公開セトリのリンクを知っている人が誰でも見られます。メンバー向けメモ・MC・休憩・演奏時間は公開されません。</li><li>マイキーのリンクを知っている人は、そのマイキーで同期しているすべてのイベント・セトリを編集できます。</li><li>リンクは転送されると、転送先の人も同じように見られます。</li></ul><p>イベント・セトリのページは検索エンジンに載らないよう設定していますが、アクセスを制限するものではありません。公開停止や削除をしても、すでに保存・転載・撮影された内容は取り消せません。</p>
+<h2>保存期間と削除</h2><p>イベント・セトリとも、開催日の90日後（開催日が未設定なら最終更新の180日後。いずれも保存から最低30日）に自動で削除します。編集リンクからいつでも削除でき、削除するとすべてのリンクが使えなくなります。</p><p>マイキーの一覧は、最後に同期してから1年使われなければ自動で削除します。「このブラウザで作ったもの」のページからいつでも削除でき、削除後は削除済みであることを示す印だけを1年間残します（同じマイキーで作り直されないようにするため）。</p>
 <h2>アクセス情報</h2><p>短時間の大量作成を防ぐため、作成時に接続元のIPアドレスを秘密の値と組み合わせて元に戻せない形に変換し、1時間単位の回数だけを記録します（IPアドレスそのものは保存しません）。このカウンタは毎日の定期処理で削除します（最長で1日程度残ります）。また、運用状況を把握するため、閲覧・作成・公開などの操作が成功した回数を、操作の種類ごと・日ごとに数えています。誰がどのページを見たか、IPアドレス、入力内容は記録せず、この回数は約90日で削除します。個人を識別するアクセス解析や、Cookie・広告による追跡は行っていません。</p>
 <h2>運営者による確認</h2><p>運営者は、運用状況を確認するため、上記の操作の回数と、イベント・セトリの件数、更新日時、保存期限、出演枠や曲の数、公開状態などの管理情報を見ることがあります。管理画面には、入力内容（タイトル・曲名・メモなど）やリンクは表示されません。</p>
 <h2>利用している外部サービス</h2><ul><li>GitHub Pages（画面の配信）</li><li>Cloudflare Workers・R2（保存と読み出し）</li><li>Google Fonts（文字の表示）</li><li>iTunes Search API（セトリの「曲を検索」を押したときのみ）</li></ul><p>ページを開くと、これらのサービスに通常の通信情報（IPアドレス、ブラウザの種類など）が送られます。「曲を検索」を押すと、その曲の曲名と原曲アーティストが Apple に送られます。各サービスでの取り扱いは、それぞれの方針に従います。</p>
-<h2>このブラウザに保存する情報</h2><p>入力途中の下書きと、開いたリンクのキーを、このブラウザ（localStorage）に保存します。共用の端末では、使い終わったらブラウザのサイトデータを削除してください。</p>
-<p class="tip">2026年10月19日 制定</p></article>`;
+<h2>このブラウザに保存する情報</h2><p>入力途中の下書きと、開いたリンクのキー、マイキーを使う場合はマイキーと前回同期した一覧を、このブラウザ（localStorage）に保存します。共用の端末では、使い終わったらブラウザのサイトデータを削除してください。</p>
+<p class="tip">2026年10月19日 制定／2026年10月31日 改定（マイキー）</p></article>`;
  document.documentElement.classList.remove('loading');return;}
 })();
