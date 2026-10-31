@@ -74,11 +74,12 @@ export async function api(req,env,ctx){
 }
 async function route(req,env){
  const url=new URL(req.url);if(url.pathname==='/api/admin/list')return adminList(req,env,url);if(url.pathname==='/api/admin/stats')return adminStats(req,env,url);
- const isYoutube=url.pathname==='/api/youtube',isAccount=url.pathname==='/api/account',isSetlist=/^\/api\/setlists(\/|$)/.test(url.pathname),match=url.pathname.match(/^\/api\/events(?:\/([a-f0-9]{24})(?:\/slots\/([a-f0-9]{12})\/(connect-key|connect|link))?)?$/);if(!match&&!isSetlist&&!isYoutube&&!isAccount)return NOT_FOUND();
+ const isYoutube=url.pathname==='/api/youtube',isInterest=url.pathname==='/api/interest',isAccount=url.pathname==='/api/account',isSetlist=/^\/api\/setlists(\/|$)/.test(url.pathname),match=url.pathname.match(/^\/api\/events(?:\/([a-f0-9]{24})(?:\/slots\/([a-f0-9]{12})\/(connect-key|connect|link))?)?$/);if(!match&&!isSetlist&&!isYoutube&&!isAccount&&!isInterest)return NOT_FOUND();
  if(!env.BUCKET)return fail('保存先の準備ができていません。時間をおいて再度お試しください。',503);
  if(!['GET','POST','PUT','DELETE'].includes(req.method))return fail('対応していない操作です',405);
  if(req.method!=='GET'&&!originAllowed(req,env))return fail('許可されていない操作です',403);
  if(isYoutube)return youtubeSearch(req,env,url);
+ if(isInterest)return interest(req,env);
  if(isAccount)return accountRoute(req,env);
  if(isSetlist)return setlistRoute(req,env,url);
  if(match[2])return slotRoute(req,env,match[1],match[2],match[3]);
@@ -240,7 +241,9 @@ async function slotRoute(req,env,id,slotId,action){
 }
 // 利用計測：操作の種類ごとの延べ回数を、日本時間の日別に stats/YYYY-MM（月ごとに1オブジェクト）へ記録する
 // 誰が・どこから・何を、は記録しない。同時更新はetag条件付きで数回やり直すが、取りこぼし得るため概数として扱う。計測の失敗で本来の処理を止めない
-export const METRICS=['event_view','public_view','member_view','event_create','event_update','event_delete','setlist_create','setlist_update','setlist_delete','publish_first','republish','publish_update','unpublish','link','unlink','youtube_search','youtube_cache','error'];
+// 有料候補への関心の計測項目（interest() を参照）
+export const INTEREST=['open','retention','design','history','separate','library'],INTEREST_LIMIT_PER_HOUR=30;
+export const METRICS=['event_view','public_view','member_view','event_create','event_update','event_delete','setlist_create','setlist_update','setlist_delete','publish_first','republish','publish_update','unpublish','link','unlink','youtube_search','youtube_cache','error',...INTEREST.map(f=>'interest_'+f)];
 const jstDay=(t=Date.now())=>new Date(t+9*36e5).toISOString().slice(0,10);
 async function bump(env,metric){
  if(!env.BUCKET)return;const day=jstDay(),key='stats/'+day.slice(0,7);
@@ -295,6 +298,16 @@ async function accountRoute(req,env){
  const next={data:body.data,revision:body.revision+1,updatedAt:new Date(now).toISOString(),expiresAt:keep};
  if(found){if(!await putIf(env,key,next,found.obj.etag))return CONFLICT()}else await putNew(env,key,next);
  return json({revision:next.revision});
+}
+// 有料候補への関心（要件書12章 F-03〜F-05）：編集画面の「今後の追加機能（準備中）」で、案内を開いた回数（open）と機能別の「使ってみたい」の回数を数える
+// 延べ回数で、人数・申込数ではない。誰が・どのイベントから押したかは記録しない。画面からの呼び出しに限り、IPごとに1時間30回まで（超えた分は黙って数えない）
+async function interest(req,env){
+ if(req.method!=='POST')return fail('対応していない操作です',405);
+ if(!fromBrowser(req,env))return fail('許可されていない操作です',403);
+ const {error,body}=await readJson(req,{maxBytes:200,maxChars:200});if(error)return error;
+ if(!isObj(body)||!INTEREST.includes(body.feature))return INVALID();
+ if(!await rateLimited(req,env,'interest',INTEREST_LIMIT_PER_HOUR))await track(req,env,'interest_'+body.feature);
+ return json({ok:true});
 }
 // YouTube 検索（セトリの「曲を検索」）。APIキー（秘密値 YOUTUBE_API_KEY）は画面に出さない
 // 動画の長さは検索結果に含まれないため、videos.list（1回1単位）で取り足す。取れなくても検索結果は返し、使い回すときに取り直す（durations が付くまで）
