@@ -160,9 +160,11 @@ npx wrangler@4 secret put ADMIN_TOKEN         # 上の文字列を貼り付け�
 | 保存すると「通信に失敗しました」 | `API_BASE` が正しいか（`https://`、末尾 `/` なし）。`ALLOWED_ORIGINS` が `https://shiori.whathides.co.jp` と完全一致しているか |
 | 「保存先の準備ができていません」（503） | `wrangler.toml` の R2 設定（`binding = "BUCKET"`、バケット名）が正しいか |
 | Actions が「API_BASE を設定してください」で失敗 | 手順4-1 の変数を設定する |
+| 画面の一部が動かない・読み込まれない（コンソールに Content-Security-Policy のエラー） | 新しく外部のサイト（API・画像・フォントなど）を使うようにした場合は、`scripts/build.mjs` の `csp` に追加する |
 | 独自ドメインで開けない | DNS の CNAME、Pages の Custom domain、HTTPS 証明書の発行状況 |
 
 ## 補足
 
 - `dist/server/` は画面とAPIを1本で配信する Worker で、ローカル確認や Cloudflare だけで公開する場合に使う。GitHub Pages 構成では使わない。
+- 画面の CSP（コンテンツセキュリティポリシー）はビルド時に `index.html` の `<meta>` として入れている。`index.html` のインラインスクリプトはハッシュで自動的に許可される。
 - GitHub Pages ではレスポンスヘッダーを設定できないため、イベントページの検索除外は画面側で `noindex` を付けている。トップページは検索対象のまま。

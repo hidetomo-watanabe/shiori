@@ -14,7 +14,15 @@ const api=fs.readFileSync('worker/api.mjs','utf8').replace(/^export (const|funct
 const ASSETS=['common.js','app.js','setlist.js','pages.js','style.css'];
 const read=name=>fs.readFileSync('public/'+name,'utf8');
 const hash=s=>crypto.createHash('sha256').update(s).digest('hex').slice(0,10);
-const html=base=>{let h=read('index.html').replace('<meta name="api-base" content="">','<meta name="api-base" content="'+base.replace(/"/g,'&quot;')+'">');
+// コンテンツセキュリティポリシー：万一 innerHTML への差し込みが起きても、外部のスクリプトの読み込みや、localStorage のキーを外へ送ることを防ぐ
+// index.html のインラインスクリプトはハッシュで許可する（中身を変えればビルドで自動的に追従）。JSON-LD は実行されないため対象外
+// 外部：Google Fonts（Oswald）、曲の長さ検索の iTunes、YouTube のサムネイル。frame-ancestors は meta では効かないため入れない
+const csp=(h,base)=>{
+ const inline=[...h.matchAll(/<script(?![^>]*\b(src|type)=)[^>]*>([\s\S]*?)<\/script>/g)].map(m=>"'sha256-"+crypto.createHash('sha256').update(m[2]).digest('base64')+"'");
+ return ["default-src 'none'","script-src 'self' "+inline.join(' '),"style-src 'self' https://fonts.googleapis.com","font-src https://fonts.gstatic.com","img-src 'self' data: https://i.ytimg.com","connect-src 'self' "+(base?base+' ':'')+'https://itunes.apple.com',"base-uri 'none'","form-action 'none'"].join('; ');
+};
+const html=base=>{let h=read('index.html');if(!h.includes('<meta charset="utf-8">'))throw Error('index.html に <meta charset="utf-8"> が見つかりません（CSPの差し込み位置）');
+ h=h.replace('<meta charset="utf-8">','<meta charset="utf-8">\n<meta http-equiv="Content-Security-Policy" content="'+csp(h,base)+'">').replace('<meta name="api-base" content="">','<meta name="api-base" content="'+base.replace(/"/g,'&quot;')+'">');
  for(const f of ASSETS)h=h.replace(new RegExp('(src|href)="'+f.replace('.','\\.')+'"'),'$1="'+f+'?v='+hash(read(f))+'"');return h};
 const scheduled='async scheduled(event,env,ctx){ctx.waitUntil(cleanup(env))}';
 const err='catch{return new Response(JSON.stringify({error:"保存処理に失敗しました。時間をおいて再度お試しください。"}),{status:500,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}})}';
