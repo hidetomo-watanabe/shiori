@@ -3,7 +3,7 @@
 const page=new URLSearchParams(location.search).get('page');if(!['mine','admin','privacy'].includes(page))return;
 const $=id=>document.getElementById(id),{API,esc,noindex}=shiori;
 // 作ったもの・マイキー（?page=mine）：端末に保存された編集キー・メンバー用キーで一覧を出す。マイキーで別の端末と揃えられる。フッターからリンク
-if(page==='mine'){document.title='作ったもの・マイキー｜ライブのしおり';noindex();
+if(page==='mine'){document.title='作ったもの・マイキー｜ライブのしおり';noindex();document.querySelector('.nav-mine')?.setAttribute('aria-current','page');
  const P='live-shiori-v1-',{store,load,apiCall,copyText,toast,MYKEY,MYBASE,accountAuth,linkKeys,syncKeys,forgetMyKey}=shiori;
  const day=d=>d?new Date(d+'T12:00:00+09:00').toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'numeric',day:'numeric',weekday:'short'}):'日付未定';
  const at=iso=>iso?new Date(iso).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
